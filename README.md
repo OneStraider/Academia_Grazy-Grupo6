@@ -84,10 +84,11 @@ Grupo 6 — ADS 6.
 
 | Integrante | Função | GitHub |
 |---|---|---|
-| Guilherme | Líder técnico | [@OneStraider](https://github.com/OneStraider) |
-| _(preencher)_ | | |
-| _(preencher)_ | | |
-| _(preencher)_ | | |
+| Guilherme Cauã | Líder técnico | [@OneStraider](https://github.com/OneStraider) |
+| Arthur Paludo | Líder técnico | [@arthurberwanger](https://github.com/arthurberwanger) |
+| Igor Daniel | Líder técnico | [@dev-igordaniel](https://github.com/dev-igordaniel) |
+| Guilherme Weber| Líder técnico | [@Guilhermeweber25](https://github.com/Guilhermeweber25) |
+| Felipe Augusto | Líder técnico | [@fellps1911](https://github.com/fellps1911) |
 
 ## Aviso sobre dados sensíveis
 
