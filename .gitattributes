@@ -1,0 +1,28 @@
+# Normaliza fim de linha: evita "arquivo inteiro modificado" quando o grupo
+# mistura Windows, macOS e Linux.
+* text=auto eol=lf
+
+*.bat        text eol=crlf
+*.cmd        text eol=crlf
+*.ps1        text eol=crlf
+
+*.dart       text
+*.yaml       text
+*.yml        text
+*.json       text
+*.md         text
+*.gradle     text
+*.xml        text
+
+*.png        binary
+*.jpg        binary
+*.jpeg       binary
+*.gif        binary
+*.webp       binary
+*.svg        text
+*.ttf        binary
+*.otf        binary
+*.jar        binary
+*.keystore   binary
+*.jks        binary
+*.pdf        binary

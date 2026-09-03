@@ -1,0 +1,99 @@
+# ==========================================================
+# Flutter / Dart
+# ==========================================================
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+coverage/
+doc/api/
+*.dill
+*.lock.bak
+
+# pubspec.lock: mantido versionado para apps (garante build reproduzivel).
+# Se este repositorio virar um package/lib, descomente a linha abaixo.
+# pubspec.lock
+
+# ==========================================================
+# Android
+# ==========================================================
+**/android/**/gradle-wrapper.jar
+**/android/.gradle/
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/local.properties
+**/android/**/GeneratedPluginRegistrant.java
+**/android/key.properties
+*.jks
+*.keystore
+
+# ==========================================================
+# iOS / macOS
+# ==========================================================
+**/ios/Flutter/.last_build_id
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral/
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/flutter_assets/
+**/ios/ServiceDefinitions.json
+**/ios/Runner/GeneratedPluginRegistrant.*
+**/ios/Pods/
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/macos/Flutter/ephemeral/
+**/Podfile.lock
+
+# ==========================================================
+# Web / Windows / Linux
+# ==========================================================
+**/web/.dart_tool/
+**/windows/flutter/ephemeral/
+**/linux/flutter/ephemeral/
+
+# ==========================================================
+# IDEs e editores
+# ==========================================================
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+*.swp
+*~
+
+# ==========================================================
+# Sistema operacional
+# ==========================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==========================================================
+# Segredos e ambiente (LGPD - REQ-33)
+# Nunca versionar chaves de API, credenciais de gateway de
+# pagamento (REQ-26) ou dados sensiveis de saude (REQ-15/16).
+# ==========================================================
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+secrets/
+google-services.json
+GoogleService-Info.plist
+
+# ==========================================================
+# Logs e temporarios
+# ==========================================================
+*.log
+*.tmp
+tmp/
