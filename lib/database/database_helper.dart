@@ -10,6 +10,8 @@ class DatabaseHelper {
 
   DatabaseHelper._internal();
 
+  // Retorna a instância do banco.
+  // Se ela já existir, reutiliza.
   Future<Database> get database async {
     if (_database != null) {
       return _database!;
@@ -20,6 +22,7 @@ class DatabaseHelper {
     return _database!;
   }
 
+  // Inicializa o banco de dados.
   Future<Database> _initDatabase() async {
     final databasePath = await getDatabasesPath();
 
@@ -30,12 +33,52 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+
+      // Versão atual do banco.
+      version: 2,
+
+      // Habilita as foreign keys do SQLite.
+      onConfigure: (db) async {
+        await db.execute('PRAGMA foreign_keys = ON');
+      },
+
+      // Executado somente quando o banco é criado pela primeira vez.
       onCreate: (db, version) async {
         await db.execute(
           DatabaseTables.exercicio,
         );
+
+        await db.execute(
+          DatabaseTables.treino,
+        );
+
+        await db.execute(
+          DatabaseTables.treinoExercicio,
+        );
+      },
+
+      // Executado quando a versão do banco aumenta.
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            DatabaseTables.treino,
+          );
+
+          await db.execute(
+            DatabaseTables.treinoExercicio,
+          );
+        }
       },
     );
   }
+
+  // Fecha o banco quando necessário.
+  Future<void> close() async {
+    final db = await database;
+
+    await db.close();
+
+    _database = null;
+  }
 }
+

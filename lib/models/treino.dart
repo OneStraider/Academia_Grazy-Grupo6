@@ -17,14 +17,15 @@ class Treino {
     this.observacoes,
   });
 
-  Map<String , dynamic> toMap() =>{
-    'id': id,
-    'aluno_id':alunoId,
-    'professor_id':professorId,
-    'nome':nome,
-    'validade':validade.toIso8601String().substring,
-    'observacoes': observacoes,
-  };
+  Map<String, dynamic> toMap() => {
+      'id': id,
+      'aluno_id': alunoId,
+      'professor_id': professorId,
+      'nome': nome,
+      'validade': validade.toIso8601String().substring(0, 10),
+      'status': status,
+      'observacoes': observacoes,
+    };
 
   factory Treino.fromMap(Map<String, dynamic> map) => Treino(
     id: map['id'] as int?,
