@@ -47,6 +47,15 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
 
   bool get _editando => widget.treino != null;
 
+  // A validade precisa ser uma data futura: o primeiro dia aceito é amanhã.
+  DateTime get _primeiraDataValida {
+    final hoje = DateTime.now();
+    return DateTime(hoje.year, hoje.month, hoje.day + 1);
+  }
+
+  bool get _validadeNoFuturo =>
+      !DateUtils.dateOnly(_validade).isBefore(_primeiraDataValida);
+
   @override
   void initState() {
     super.initState();
@@ -91,10 +100,13 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
   }
 
   Future<void> _escolherData() async {
+    final primeira = _primeiraDataValida;
+
     final escolhida = await showDatePicker(
       context: context,
-      initialDate: _validade,
-      firstDate: DateTime(2020),
+      // Ao editar um treino vencido, o calendário abre em amanhã.
+      initialDate: _validade.isBefore(primeira) ? primeira : _validade,
+      firstDate: primeira,
       lastDate: DateTime.now().add(const Duration(days: 730)),
     );
 
@@ -137,6 +149,16 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
 
   Future<void> _salvar() async {
     if (!_form.currentState!.validate()) {
+      return;
+    }
+
+    if (!_validadeNoFuturo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('A validade precisa ser a partir de amanhã.'),
+        ),
+      );
+
       return;
     }
 
@@ -310,10 +332,13 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
                     InkWell(
                       onTap: _escolherData,
                       child: InputDecorator(
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Validade',
                           suffixIcon:
-                              Icon(Icons.calendar_today_outlined),
+                              const Icon(Icons.calendar_today_outlined),
+                          errorText: _validadeNoFuturo
+                              ? null
+                              : 'Escolha uma data a partir de amanhã',
                         ),
                         child: Text(
                           _data(_validade),
