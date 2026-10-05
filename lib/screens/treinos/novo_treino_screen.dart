@@ -9,6 +9,21 @@ import '../../services/treino_services.dart';
 import '../../theme/app_theme.dart';
 import '../alunos_mock.dart';
 
+// Botão principal do modelo 2: FilledButton azul, cantos de 12,
+// altura 50 e texto em negrito. Quando o AppTheme tiver um
+// filledButtonTheme, este estilo pode sair daqui.
+ButtonStyle _estiloBotaoPrincipal(BuildContext context) {
+  return FilledButton.styleFrom(
+    minimumSize: const Size(double.infinity, 50),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+    ),
+    textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.bold,
+        ),
+  );
+}
+
 class _ItemTreino {
   final int? id;
   final Exercicio exercicio;
@@ -423,8 +438,9 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            ElevatedButton(
+            FilledButton(
               onPressed: _salvar,
+              style: _estiloBotaoPrincipal(context),
               child: Text(
                 _editando
                     ? 'Salvar alterações'
@@ -614,8 +630,9 @@ class _AdicionarExercicioSheetState
               ],
             ),
             const SizedBox(height: 16),
-            ElevatedButton(
+            FilledButton(
               onPressed: _confirmar,
+              style: _estiloBotaoPrincipal(context),
               child: const Text('Adicionar'),
             ),
           ],
