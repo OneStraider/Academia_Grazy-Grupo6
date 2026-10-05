@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/exercicios.dart';
 import '../../models/treino.dart';
@@ -470,6 +471,8 @@ class _AdicionarExercicioSheet extends StatefulWidget {
 
 class _AdicionarExercicioSheetState
     extends State<_AdicionarExercicioSheet> {
+  final _form = GlobalKey<FormState>();
+
   Exercicio? _escolhido;
 
   final _series = TextEditingController(text: '3');
@@ -477,8 +480,32 @@ class _AdicionarExercicioSheetState
   final _carga = TextEditingController(text: '0');
   final _descanso = TextEditingController(text: '60');
 
+  // Aceita vírgula ou ponto como separador decimal (ex.: 12,5).
+  double? _lerCarga(String texto) =>
+      double.tryParse(texto.trim().replaceAll(',', '.'));
+
+  // Séries e repetições: número inteiro maior que zero.
+  String? _validarMinimoUm(String? valor) {
+    final numero = int.tryParse(valor?.trim() ?? '');
+    if (numero == null) return 'Informe um número';
+    if (numero < 1) return 'Mínimo 1';
+    return null;
+  }
+
+  // Descanso em segundos: número inteiro, pode ser zero.
+  String? _validarDescanso(String? valor) {
+    if (int.tryParse(valor?.trim() ?? '') == null) return 'Informe um número';
+    return null;
+  }
+
+  // Carga em kg: pode ser zero (exercício com o peso do corpo).
+  String? _validarCarga(String? valor) {
+    if (_lerCarga(valor ?? '') == null) return 'Informe um número';
+    return null;
+  }
+
   void _confirmar() {
-    if (_escolhido == null) {
+    if (!_form.currentState!.validate()) {
       return;
     }
 
@@ -486,13 +513,10 @@ class _AdicionarExercicioSheetState
       context,
       _ItemTreino(
         _escolhido!,
-        int.tryParse(_series.text) ?? 3,
-        int.tryParse(_reps.text) ?? 10,
-        double.tryParse(
-              _carga.text.replaceAll(',', '.'),
-            ) ??
-            0,
-        int.tryParse(_descanso.text) ?? 60,
+        int.parse(_series.text.trim()),
+        int.parse(_reps.text.trim()),
+        _lerCarga(_carga.text)!,
+        int.parse(_descanso.text.trim()),
       ),
     );
   }
@@ -507,23 +531,26 @@ class _AdicionarExercicioSheetState
     super.dispose();
   }
 
+  // Campo numérico: só aceita dígitos (e vírgula/ponto quando decimal).
   Widget _campo(
     String rotulo,
-    TextEditingController c,
-  ) {
+    TextEditingController c, {
+    required String? Function(String?) validator,
+    bool decimal = false,
+  }) {
     return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: TextField(
-          controller: c,
-          keyboardType:
-              const TextInputType.numberWithOptions(
-            decimal: true,
-          ),
-          decoration: InputDecoration(
-            labelText: rotulo,
-          ),
+      child: TextFormField(
+        controller: c,
+        keyboardType: TextInputType.numberWithOptions(decimal: decimal),
+        inputFormatters: [
+          decimal
+              ? FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))
+              : FilteringTextInputFormatter.digitsOnly,
+        ],
+        decoration: InputDecoration(
+          labelText: rotulo,
         ),
+        validator: validator,
       ),
     );
   }
@@ -537,43 +564,62 @@ class _AdicionarExercicioSheetState
         16,
         MediaQuery.of(context).viewInsets.bottom + 16,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          DropdownButtonFormField<Exercicio>(
-            initialValue: _escolhido,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Exercício',
+      child: Form(
+        key: _form,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DropdownButtonFormField<Exercicio>(
+              initialValue: _escolhido,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Exercício',
+              ),
+              items: [
+                for (final e in widget.exercicios)
+                  DropdownMenuItem(
+                    value: e,
+                    child: Text(e.nome),
+                  ),
+              ],
+              onChanged: (v) {
+                setState(() {
+                  _escolhido = v;
+                });
+              },
+              validator: (v) => v == null ? 'Escolha o exercício' : null,
             ),
-            items: [
-              for (final e in widget.exercicios)
-                DropdownMenuItem(
-                  value: e,
-                  child: Text(e.nome),
+            const SizedBox(height: 12),
+            // Duas linhas de dois campos: sobra espaço para a mensagem de erro.
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _campo('Séries', _series, validator: _validarMinimoUm),
+                const SizedBox(width: 12),
+                _campo('Repetições', _reps, validator: _validarMinimoUm),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _campo(
+                  'Carga (kg)',
+                  _carga,
+                  decimal: true,
+                  validator: _validarCarga,
                 ),
-            ],
-            onChanged: (v) {
-              setState(() {
-                _escolhido = v;
-              });
-            },
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _campo('Séries', _series),
-              _campo('Reps', _reps),
-              _campo('Carga (kg)', _carga),
-              _campo('Desc. (s)', _descanso),
-            ],
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: _confirmar,
-            child: const Text('Adicionar'),
-          ),
-        ],
+                const SizedBox(width: 12),
+                _campo('Descanso (s)', _descanso, validator: _validarDescanso),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _confirmar,
+              child: const Text('Adicionar'),
+            ),
+          ],
+        ),
       ),
     );
   }
