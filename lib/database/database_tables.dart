@@ -42,5 +42,35 @@ class DatabaseTables {
         ON DELETE CASCADE
     )
   ''';
-}
 
+  // REQ-06: registro da execução de um exercício do treino.
+  static const String execucaoExercicio = '''
+    CREATE TABLE execucao_exercicio (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      treino_exercicio_id INTEGER NOT NULL,
+      data_execucao TEXT NOT NULL,
+      series_realizadas INTEGER NOT NULL,
+      carga REAL NOT NULL,
+      repeticoes INTEGER NOT NULL,
+
+      FOREIGN KEY (treino_exercicio_id)
+        REFERENCES treino_exercicio (id)
+        ON DELETE CASCADE
+    )
+  ''';
+
+  // REQ-07: feedback do aluno sobre a execução.
+  // nivel: MUITO_FACIL | BOM | MUITO_DIFICIL
+  static const String feedback = '''
+    CREATE TABLE feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      execucao_id INTEGER NOT NULL,
+      nivel TEXT NOT NULL,
+      comentario TEXT,
+
+      FOREIGN KEY (execucao_id)
+        REFERENCES execucao_exercicio (id)
+        ON DELETE CASCADE
+    )
+  ''';
+}

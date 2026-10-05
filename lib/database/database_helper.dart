@@ -35,7 +35,10 @@ class DatabaseHelper {
       path,
 
       // Versão atual do banco.
-      version: 2,
+      // 1 -> exercicio
+      // 2 -> treino e treino_exercicio
+      // 3 -> execucao_exercicio e feedback
+      version: 3,
 
       // Habilita as foreign keys do SQLite.
       onConfigure: (db) async {
@@ -44,29 +47,24 @@ class DatabaseHelper {
 
       // Executado somente quando o banco é criado pela primeira vez.
       onCreate: (db, version) async {
-        await db.execute(
-          DatabaseTables.exercicio,
-        );
-
-        await db.execute(
-          DatabaseTables.treino,
-        );
-
-        await db.execute(
-          DatabaseTables.treinoExercicio,
-        );
+        await db.execute(DatabaseTables.exercicio);
+        await db.execute(DatabaseTables.treino);
+        await db.execute(DatabaseTables.treinoExercicio);
+        await db.execute(DatabaseTables.execucaoExercicio);
+        await db.execute(DatabaseTables.feedback);
       },
 
       // Executado quando a versão do banco aumenta.
+      // Os dados que já existem no celular são mantidos.
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
-          await db.execute(
-            DatabaseTables.treino,
-          );
+          await db.execute(DatabaseTables.treino);
+          await db.execute(DatabaseTables.treinoExercicio);
+        }
 
-          await db.execute(
-            DatabaseTables.treinoExercicio,
-          );
+        if (oldVersion < 3) {
+          await db.execute(DatabaseTables.execucaoExercicio);
+          await db.execute(DatabaseTables.feedback);
         }
       },
     );
@@ -81,4 +79,3 @@ class DatabaseHelper {
     _database = null;
   }
 }
-
