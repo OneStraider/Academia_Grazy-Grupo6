@@ -287,6 +287,8 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
   @override
   Widget build(BuildContext context) {
     final tema = Theme.of(context).textTheme;
+    // Vermelho de erro vem do tema (AppTheme), sem cor fixa na tela.
+    final corErro = Theme.of(context).colorScheme.error;
 
     return Scaffold(
       appBar: AppBar(
@@ -454,9 +456,9 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
                 icon: const Icon(Icons.delete_outline),
                 label: const Text('Excluir treino'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.red.shade700,
+                  foregroundColor: corErro,
                   side: BorderSide(
-                    color: Colors.red.shade200,
+                    color: corErro.withValues(alpha: 0.4),
                   ),
                   minimumSize: const Size(
                     double.infinity,
