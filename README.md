@@ -1,4 +1,4 @@
-# Academia Grazy — Grupo 6
+# Academia Grazy  — Grupo 6
 
 Sistema Integrado de Gestão de Treinos, Agendamento e Operação de Academia
 (aplicativo mobile + painel web administrativo).
