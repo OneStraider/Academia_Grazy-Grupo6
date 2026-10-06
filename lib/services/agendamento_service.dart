@@ -18,9 +18,9 @@ class AgendamentoService {
   }
 
   // TODO: Constantes de prazos (a confirmar com o grupo até 26/10)
-  // static const int antecedenciaMinima = 1; // 1 hora
-  // static const int prazoCancelamento = 2; // 2 horas
-  // static const int janelaCheckin = 30; // 30 minutos
+  static const int antecedenciaMinima = 360; // 6 horas em minutos
+  static const int prazoCancelamento = 120; // 2 horas em minutos
+  static const int janelaCheckin = 30; // 30 minutos
 
   /// Lista todos os horários de aula de um dia específico
   /// Calcula vagas disponíveis na consulta
