@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/home/home_shell.dart';
+import 'screens/login/login_screen.dart';
 import 'theme/app_theme.dart';
 
 class AcademiaGrazyApp extends StatelessWidget {
@@ -12,7 +12,7 @@ class AcademiaGrazyApp extends StatelessWidget {
       title: 'Academia Grazy',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
-      home: const HomeShell(),
+      home: const LoginScreen(),
     );
   }
 }
