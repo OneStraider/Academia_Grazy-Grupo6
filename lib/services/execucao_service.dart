@@ -1,11 +1,11 @@
 import '../database/database_helper.dart';
+import '../models/execucao_treino.dart';
 
 class ExecucaoService {
   final DatabaseHelper databaseHelper;
 
-  ExecucaoService({
-    DatabaseHelper? databaseHelper,
-  }) : databaseHelper = databaseHelper ?? DatabaseHelper.instance;
+  ExecucaoService({DatabaseHelper? databaseHelper})
+    : databaseHelper = databaseHelper ?? DatabaseHelper.instance;
 
   // REQ-06: grava a execução de um exercício. Retorna o id da execução.
   Future<int> registrarExecucao({
@@ -47,17 +47,38 @@ class ExecucaoService {
     final db = await databaseHelper.database;
 
     final agora = DateTime.now();
-    final dia = '${agora.year}-'
+    final dia =
+        '${agora.year}-'
         '${agora.month.toString().padLeft(2, '0')}-'
         '${agora.day.toString().padLeft(2, '0')}';
 
-    final resultado = await db.rawQuery('''
+    final resultado = await db.rawQuery(
+      '''
       SELECT DISTINCT ex.treino_exercicio_id AS id
       FROM execucao_exercicio ex
       INNER JOIN treino_exercicio te ON te.id = ex.treino_exercicio_id
       WHERE te.treino_id = ? AND ex.data_execucao LIKE ?
-    ''', [treinoId, '$dia%']);
+    ''',
+      [treinoId, '$dia%'],
+    );
 
     return resultado.map((linha) => linha['id'] as int).toSet();
+  }
+
+  Future<List<ExecucaoTreino>> historico(int treinoId) async {
+    final db = await databaseHelper.database;
+    final rows = await db.rawQuery(
+      '''
+      SELECT ex.*, e.nome AS exercicio_nome
+      FROM execucao_exercicio ex
+      JOIN treino_exercicio te ON te.id = ex.treino_exercicio_id
+      JOIN exercicio e ON e.id = te.exercicio_id
+      WHERE te.treino_id = ?
+      ORDER BY ex.data_execucao DESC
+      LIMIT 50
+    ''',
+      [treinoId],
+    );
+    return rows.map(ExecucaoTreino.fromMap).toList();
   }
 }

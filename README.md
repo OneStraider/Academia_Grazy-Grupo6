@@ -83,3 +83,15 @@ Além dessas verificações, a AR-T1 exige executar o app no emulador Android. A
 - Cada integrante implementa somente os arquivos e tarefas atribuídos a ele. Alterações em arquivos de outro dono devem ser combinadas com o responsável.
 
 A proteção da `main` é configurada no GitHub e precisa ser conferida pelo responsável pelo repositório.
+
+## Estado da implementação (atualização)
+
+O login e os fluxos principais de treino, catálogo, agenda e avaliação física estão implementados no código atual. O SQLite local inicializa contas e dados de demonstração. Para testar:
+
+| Perfil | E-mail | Senha |
+|---|---|---|
+| Professor | `professor@academiagrazy.com` | `grazy123` |
+| Aluno | `guilherme@academiagrazy.com` | `grazy123` |
+| Aluna | `maria@academiagrazy.com` | `grazy123` |
+
+Cada instalação mantém seu próprio banco local e não sincroniza dados com outros aparelhos. Para a apresentação compartilhada será necessário hospedar uma API e um banco central. As telas usam a camada de services; a integração remota deverá substituir a implementação de persistência SQLite nesses services.

@@ -105,7 +105,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       validator: (valor) {
                         final email = valor?.trim() ?? '';
                         if (email.isEmpty) return 'Informe seu e-mail';
-                        if (!email.contains('@')) return 'Informe um e-mail válido';
+                        if (!email.contains('@'))
+                          return 'Informe um e-mail válido';
                         return null;
                       },
                     ),
@@ -120,10 +121,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         labelText: 'Senha',
                         prefixIcon: const Icon(Icons.lock_outline),
                         suffixIcon: IconButton(
-                          tooltip: _mostrarSenha ? 'Ocultar senha' : 'Mostrar senha',
-                          onPressed: () => setState(
-                            () => _mostrarSenha = !_mostrarSenha,
-                          ),
+                          tooltip: _mostrarSenha
+                              ? 'Ocultar senha'
+                              : 'Mostrar senha',
+                          onPressed: () =>
+                              setState(() => _mostrarSenha = !_mostrarSenha),
                           icon: Icon(
                             _mostrarSenha
                                 ? Icons.visibility_off_outlined
@@ -131,9 +133,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                       ),
-                      validator: (valor) => (valor?.isEmpty ?? true)
-                          ? 'Informe sua senha'
-                          : null,
+                      validator: (valor) =>
+                          (valor?.isEmpty ?? true) ? 'Informe sua senha' : null,
                     ),
                     const SizedBox(height: 24),
                     FilledButton(
@@ -145,6 +146,13 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Text('Entrar'),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Contas para teste: professor@academiagrazy.com ou '
+                      'guilherme@academiagrazy.com · senha: grazy123',
+                      textAlign: TextAlign.center,
+                      style: tema.bodySmall,
                     ),
                   ],
                 ),

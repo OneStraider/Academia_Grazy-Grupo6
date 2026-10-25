@@ -2,17 +2,20 @@ import 'package:flutter/material.dart';
 
 import '../../models/treino.dart';
 import '../../models/treino_exercicios.dart';
+import '../../models/execucao_treino.dart';
+import '../../services/usuario_service.dart';
 import '../../services/execucao_service.dart';
 import '../../services/treino_services.dart';
 import '../../theme/app_theme.dart';
-import '../alunos_mock.dart';
 import 'executar_treinos_screen.dart';
 
 class _Dados {
   final List<TreinoExercicio> itens;
   final Set<int> concluidos;
+  final String professorNome;
+  final List<ExecucaoTreino> historico;
 
-  _Dados(this.itens, this.concluidos);
+  _Dados(this.itens, this.concluidos, this.professorNome, this.historico);
 }
 
 // Tela do aluno: detalhes do treino + botão de iniciar.
@@ -40,7 +43,11 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
     final id = widget.treino.id!;
     final itens = await _treinoService.listarExercicios(id);
     final concluidos = await _execucaoService.concluidosHoje(id);
-    return _Dados(itens, concluidos);
+    final professor = await UsuarioService().buscarPorId(
+      widget.treino.professorId,
+    );
+    final historico = await _execucaoService.historico(id);
+    return _Dados(itens, concluidos, professor?.nome ?? 'Professor', historico);
   }
 
   void _recarregar() {
@@ -51,7 +58,9 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
 
   Future<void> _iniciar(_Dados dados) async {
     // Começa no primeiro exercício que ainda não foi feito hoje.
-    var inicio = dados.itens.indexWhere((i) => !dados.concluidos.contains(i.id));
+    var inicio = dados.itens.indexWhere(
+      (i) => !dados.concluidos.contains(i.id),
+    );
     if (inicio < 0) inicio = 0;
 
     await Navigator.push<bool>(
@@ -72,7 +81,8 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
       '${d.day.toString().padLeft(2, '0')}/'
       '${d.month.toString().padLeft(2, '0')}/${d.year}';
 
-  String _fmt(double v) => v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
+  String _fmt(double v) =>
+      v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
 
   @override
   Widget build(BuildContext context) {
@@ -97,7 +107,8 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
 
           final dados = snapshot.data!;
           final feitos = dados.concluidos.length;
-          final tudoFeito = dados.itens.isNotEmpty &&
+          final tudoFeito =
+              dados.itens.isNotEmpty &&
               dados.itens.every((i) => dados.concluidos.contains(i.id));
 
           String rotuloBotao = 'Iniciar treino';
@@ -127,10 +138,12 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
                               children: [
                                 vencido
                                     ? _chip('Vencido')
-                                    : _chip('Ativo',
+                                    : _chip(
+                                        'Ativo',
                                         destaque: true,
-                                        icone: Icons.check),
-                                _chip(professorNomeTeste),
+                                        icone: Icons.check,
+                                      ),
+                                _chip(dados.professorNome),
                                 _chip('Até ${_data(t.validade)}'),
                               ],
                             ),
@@ -142,6 +155,27 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
                         ),
                       ),
                     ),
+                    if (dados.historico.isNotEmpty) ...[
+                      const SizedBox(height: 20),
+                      Text('Histórico de execução', style: tema.titleMedium),
+                      const SizedBox(height: 8),
+                      Card(
+                        child: Column(
+                          children: [
+                            for (final execucao in dados.historico.take(10))
+                              ListTile(
+                                leading: const Icon(Icons.history),
+                                title: Text(
+                                  execucao.exercicioNome ?? 'Exercício',
+                                ),
+                                subtitle: Text(
+                                  '${execucao.dataExecucao.day}/${execucao.dataExecucao.month}/${execucao.dataExecucao.year} · ${execucao.seriesRealizadas} séries × ${execucao.repeticoes} · ${execucao.carga} kg',
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
                     if (tudoFeito)
                       Container(
                         margin: const EdgeInsets.only(top: 12),
@@ -171,8 +205,10 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text('Exercícios', style: tema.titleMedium),
-                        Text('${dados.itens.length} no total',
-                            style: tema.bodySmall),
+                        Text(
+                          '${dados.itens.length} no total',
+                          style: tema.bodySmall,
+                        ),
                       ],
                     ),
                     const SizedBox(height: 8),

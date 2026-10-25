@@ -1,4 +1,6 @@
-﻿import '../database/database_helper.dart';
+import 'package:sqflite/sqflite.dart';
+
+import '../database/database_helper.dart';
 import '../models/exercicios.dart';
 import '../models/treino.dart';
 import '../models/treino_exercicios.dart';
@@ -6,19 +8,21 @@ import '../models/treino_exercicios.dart';
 class TreinoService {
   final DatabaseHelper databaseHelper;
 
-  TreinoService({
-    DatabaseHelper? databaseHelper,
-  }) : databaseHelper = databaseHelper ?? DatabaseHelper.instance;
+  TreinoService({DatabaseHelper? databaseHelper})
+    : databaseHelper = databaseHelper ?? DatabaseHelper.instance;
 
-  // Cadastra o treino e os exercÃ­cios dele de uma vez.
-  // Se algum insert falhar, nada Ã© salvo (transaction).
-  Future<int> cadastrar(
-    Treino treino,
-    List<TreinoExercicio> itens,
-  ) async {
+  // Cadastra o treino e os exercícios dele de uma vez.
+  // Se algum insert falhar, nada é salvo (transaction).
+  Future<int> cadastrar(Treino treino, List<TreinoExercicio> itens) async {
     final db = await databaseHelper.database;
 
     return await db.transaction((txn) async {
+      await txn.update(
+        'treino',
+        {'status': 'INATIVO'},
+        where: "aluno_id = ? AND status = 'ATIVO'",
+        whereArgs: [treino.alunoId],
+      );
       final treinoId = await txn.insert('treino', treino.toMap());
 
       for (final item in itens) {
@@ -34,17 +38,16 @@ class TreinoService {
 
   Future<List<Treino>> listar() async {
     final db = await databaseHelper.database;
+    await _atualizarVencidos(db);
 
-    final resultado = await db.query(
-      'treino',
-      orderBy: 'validade ASC',
-    );
+    final resultado = await db.query('treino', orderBy: 'validade ASC');
 
     return resultado.map((map) => Treino.fromMap(map)).toList();
   }
 
   Future<List<Treino>> listarPorAluno(int alunoId) async {
     final db = await databaseHelper.database;
+    await _atualizarVencidos(db);
 
     final resultado = await db.query(
       'treino',
@@ -56,8 +59,20 @@ class TreinoService {
     return resultado.map((map) => Treino.fromMap(map)).toList();
   }
 
-  // Quantidade de exercÃ­cios de cada treino: {treinoId: quantidade}.
-  // Uma Ãºnica consulta para a lista toda.
+  Future<void> _atualizarVencidos(Database db) async {
+    final hoje = DateTime.now();
+    final data =
+        '${hoje.year.toString().padLeft(4, '0')}-'
+        '${hoje.month.toString().padLeft(2, '0')}-'
+        '${hoje.day.toString().padLeft(2, '0')}';
+    await db.rawUpdate(
+      "UPDATE treino SET status='VENCIDO' WHERE validade < ? AND status='ATIVO'",
+      [data],
+    );
+  }
+
+  // Quantidade de exercícios de cada treino: {treinoId: quantidade}.
+  // Uma única consulta para a lista toda.
   Future<Map<int, int>> contagemPorTreino() async {
     final db = await databaseHelper.database;
 
@@ -73,11 +88,12 @@ class TreinoService {
     };
   }
 
-  // ExercÃ­cios de um treino, jÃ¡ com os dados do exercÃ­cio (JOIN).
+  // Exercícios de um treino, já com os dados do exercício (JOIN).
   Future<List<TreinoExercicio>> listarExercicios(int treinoId) async {
     final db = await databaseHelper.database;
 
-    final resultado = await db.rawQuery('''
+    final resultado = await db.rawQuery(
+      '''
       SELECT
         te.*,
         e.nome AS e_nome,
@@ -88,7 +104,9 @@ class TreinoService {
       INNER JOIN exercicio e ON e.id = te.exercicio_id
       WHERE te.treino_id = ?
       ORDER BY te.ordem ASC
-    ''', [treinoId]);
+    ''',
+      [treinoId],
+    );
 
     return resultado.map((map) {
       final base = TreinoExercicio.fromMap(map);
@@ -114,14 +132,11 @@ class TreinoService {
     }).toList();
   }
 
-  // Atualiza o treino e a lista de exercÃ­cios.
-  // Itens com id sÃ£o atualizados, itens sem id sÃ£o inseridos e os que
-  // saÃ­ram da lista sÃ£o removidos. Assim o histÃ³rico de execuÃ§Ãµes dos
-  // exercÃ­cios que continuam no treino Ã© preservado.
-  Future<void> editar(
-    Treino treino,
-    List<TreinoExercicio> itens,
-  ) async {
+  // Atualiza o treino e a lista de exercícios.
+  // Itens com id são atualizados, itens sem id são inseridos e os que
+  // saíram da lista são removidos. Assim o histórico de execuções dos
+  // exercícios que continuam no treino é preservado.
+  Future<void> editar(Treino treino, List<TreinoExercicio> itens) async {
     final db = await databaseHelper.database;
 
     await db.transaction((txn) async {
@@ -132,8 +147,10 @@ class TreinoService {
         whereArgs: [treino.id],
       );
 
-      final idsMantidos =
-          itens.where((i) => i.id != null).map((i) => i.id!).toList();
+      final idsMantidos = itens
+          .where((i) => i.id != null)
+          .map((i) => i.id!)
+          .toList();
 
       if (idsMantidos.isEmpty) {
         await txn.delete(
@@ -170,15 +187,11 @@ class TreinoService {
     });
   }
 
-  // Os exercÃ­cios, execuÃ§Ãµes e feedbacks do treino sÃ£o apagados junto
+  // Os exercícios, execuções e feedbacks do treino são apagados junto
   // (ON DELETE CASCADE).
   Future<int> excluir(int id) async {
     final db = await databaseHelper.database;
 
-    return await db.delete(
-      'treino',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    return await db.delete('treino', where: 'id = ?', whereArgs: [id]);
   }
 }

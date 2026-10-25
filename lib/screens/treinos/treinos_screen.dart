@@ -2,16 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../../models/treino.dart';
 import '../../services/treino_services.dart';
+import '../../services/usuario_service.dart';
 import '../../theme/app_theme.dart';
-import '../alunos_mock.dart';
 import 'detalhes_treino_screen.dart';
 import 'novo_treino_screen.dart';
 
 class _Dados {
   final List<Treino> treinos;
   final Map<int, int> contagem;
+  final Map<int, String> nomesAlunos;
 
-  _Dados(this.treinos, this.contagem);
+  _Dados(this.treinos, this.contagem, this.nomesAlunos);
 }
 
 class TreinosScreen extends StatefulWidget {
@@ -26,7 +27,9 @@ class _TreinosScreenState extends State<TreinosScreen> {
   final _busca = TextEditingController();
   late Future<_Dados> _futuro;
 
-  bool get _ehProfessor => papelAtual.value == Papel.professor;
+  bool get _ehProfessor =>
+      UsuarioService.usuarioLogado?.ehProfessor == true ||
+      UsuarioService.usuarioLogado?.ehAdmin == true;
 
   @override
   void initState() {
@@ -38,11 +41,14 @@ class _TreinosScreenState extends State<TreinosScreen> {
   Future<_Dados> _carregar() async {
     final treinos = _ehProfessor
         ? await _service.listar()
-        : await _service.listarPorAluno(alunoLogadoId.value);
+        : await _service.listarPorAluno(UsuarioService.usuarioLogado?.id ?? -1);
 
     final contagem = await _service.contagemPorTreino();
+    final alunos = await UsuarioService().listarAlunos();
 
-    return _Dados(treinos, contagem);
+    return _Dados(treinos, contagem, {
+      for (final aluno in alunos) aluno.id!: aluno.nome,
+    });
   }
 
   void _recarregar() {
@@ -70,9 +76,7 @@ class _TreinosScreenState extends State<TreinosScreen> {
     } else {
       await Navigator.push<void>(
         context,
-        MaterialPageRoute(
-          builder: (_) => DetalhesTreinoScreen(treino: treino),
-        ),
+        MaterialPageRoute(builder: (_) => DetalhesTreinoScreen(treino: treino)),
       );
     }
     if (mounted) _recarregar();
@@ -143,7 +147,8 @@ class _TreinosScreenState extends State<TreinosScreen> {
 
                     final todos = dados.treinos.where((t) {
                       final aluno =
-                          (alunosTeste[t.alunoId] ?? '').toLowerCase();
+                          (dados.nomesAlunos[t.alunoId] ?? 'Aluno ${t.alunoId}')
+                              .toLowerCase();
                       return aluno.contains(filtro);
                     }).toList();
 
@@ -164,19 +169,35 @@ class _TreinosScreenState extends State<TreinosScreen> {
                       padding: const EdgeInsets.only(bottom: 90),
                       children: [
                         if (ativos.isNotEmpty) ...[
-                          Text('Ativos · ${ativos.length}',
-                              style: tema.titleMedium),
+                          Text(
+                            'Ativos · ${ativos.length}',
+                            style: tema.titleMedium,
+                          ),
                           const SizedBox(height: 8),
                           for (final t in ativos)
-                            _card(t, false, dados.contagem[t.id] ?? 0),
+                            _card(
+                              t,
+                              false,
+                              dados.contagem[t.id] ?? 0,
+                              dados.nomesAlunos[t.alunoId] ??
+                                  'Aluno ${t.alunoId}',
+                            ),
                         ],
                         if (vencidos.isNotEmpty) ...[
                           const SizedBox(height: 8),
-                          Text('Vencidos · ${vencidos.length}',
-                              style: tema.titleMedium),
+                          Text(
+                            'Vencidos · ${vencidos.length}',
+                            style: tema.titleMedium,
+                          ),
                           const SizedBox(height: 8),
                           for (final t in vencidos)
-                            _card(t, true, dados.contagem[t.id] ?? 0),
+                            _card(
+                              t,
+                              true,
+                              dados.contagem[t.id] ?? 0,
+                              dados.nomesAlunos[t.alunoId] ??
+                                  'Aluno ${t.alunoId}',
+                            ),
                         ],
                       ],
                     );
@@ -190,9 +211,7 @@ class _TreinosScreenState extends State<TreinosScreen> {
     );
   }
 
-  Widget _card(Treino t, bool vencido, int quantidade) {
-    final aluno = alunosTeste[t.alunoId] ?? 'Aluno ${t.alunoId}';
-
+  Widget _card(Treino t, bool vencido, int quantidade, String aluno) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Card(
@@ -204,8 +223,9 @@ class _TreinosScreenState extends State<TreinosScreen> {
             child: Row(
               children: [
                 CircleAvatar(
-                  backgroundColor:
-                      vencido ? AppTheme.borda : AppTheme.primariaSuave,
+                  backgroundColor: vencido
+                      ? AppTheme.borda
+                      : AppTheme.primariaSuave,
                   child: Text(
                     aluno[0],
                     style: TextStyle(
@@ -231,11 +251,15 @@ class _TreinosScreenState extends State<TreinosScreen> {
                         spacing: 6,
                         runSpacing: 6,
                         children: [
-                          _chip(vencido ? 'Vencido' : 'Ativo',
-                              destaque: !vencido),
-                          _chip(vencido
-                              ? 'Venceu em ${_data(t.validade)}'
-                              : 'Até ${_data(t.validade)}'),
+                          _chip(
+                            vencido ? 'Vencido' : 'Ativo',
+                            destaque: !vencido,
+                          ),
+                          _chip(
+                            vencido
+                                ? 'Venceu em ${_data(t.validade)}'
+                                : 'Até ${_data(t.validade)}',
+                          ),
                           _chip(
                             '$quantidade '
                             '${quantidade == 1 ? 'exercício' : 'exercícios'}',

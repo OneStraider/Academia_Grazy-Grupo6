@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/exercicios.dart';
@@ -6,8 +6,9 @@ import '../../models/treino.dart';
 import '../../models/treino_exercicios.dart';
 import '../../services/exercicios_services.dart';
 import '../../services/treino_services.dart';
+import '../../services/usuario_service.dart';
+import '../../models/usuario.dart';
 import '../../theme/app_theme.dart';
-import '../alunos_mock.dart';
 
 // Botão principal do modelo 2: FilledButton azul, cantos de 12,
 // altura 50 e texto em negrito. Quando o AppTheme tiver um
@@ -15,12 +16,9 @@ import '../alunos_mock.dart';
 ButtonStyle _estiloBotaoPrincipal(BuildContext context) {
   return FilledButton.styleFrom(
     minimumSize: const Size(double.infinity, 50),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(12),
-    ),
-    textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
-          fontWeight: FontWeight.bold,
-        ),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    textStyle: Theme.of(context).textTheme.labelLarge
+        ?.copyWith(fontWeight: FontWeight.bold),
   );
 }
 
@@ -57,6 +55,7 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
   final _nome = TextEditingController();
   final _obs = TextEditingController();
   final List<_ItemTreino> _itens = [];
+  List<Usuario> _alunos = [];
 
   int? _alunoId;
   DateTime _validade = DateTime.now().add(const Duration(days: 30));
@@ -75,6 +74,9 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
   @override
   void initState() {
     super.initState();
+    UsuarioService().listarAlunos().then((v) {
+      if (mounted) setState(() => _alunos = v);
+    });
 
     final t = widget.treino;
 
@@ -140,9 +142,7 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
 
     if (exercicios.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Nenhum exercício cadastrado.'),
-        ),
+        const SnackBar(content: Text('Nenhum exercício cadastrado.')),
       );
 
       return;
@@ -151,9 +151,7 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
     final item = await showModalBottomSheet<_ItemTreino>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _AdicionarExercicioSheet(
-        exercicios: exercicios,
-      ),
+      builder: (_) => _AdicionarExercicioSheet(exercicios: exercicios),
     );
 
     if (item != null) {
@@ -180,9 +178,7 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
 
     if (_itens.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Adicione pelo menos um exercício.'),
-        ),
+        const SnackBar(content: Text('Adicione pelo menos um exercício.')),
       );
 
       return;
@@ -191,12 +187,12 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
     final treino = Treino(
       id: widget.treino?.id,
       alunoId: _alunoId!,
-      professorId: widget.treino?.professorId ?? professorIdTeste,
+      professorId:
+          widget.treino?.professorId ?? UsuarioService.usuarioLogado?.id ?? 1,
       nome: _nome.text.trim(),
       validade: _validade,
       status: widget.treino?.status ?? 'ATIVO',
-      observacoes:
-          _obs.text.trim().isEmpty ? null : _obs.text.trim(),
+      observacoes: _obs.text.trim().isEmpty ? null : _obs.text.trim(),
     );
 
     final itens = [
@@ -226,11 +222,8 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao salvar: $e'),
-        ),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erro ao salvar: $e')));
     }
   }
 
@@ -269,11 +262,8 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao excluir: $e'),
-        ),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erro ao excluir: $e')));
     }
   }
 
@@ -291,11 +281,7 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
     final corErro = Theme.of(context).colorScheme.error;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _editando ? 'Editar treino' : 'Novo treino',
-        ),
-      ),
+      appBar: AppBar(title: Text(_editando ? 'Editar treino' : 'Novo treino')),
       body: Form(
         key: _form,
         child: ListView(
@@ -307,33 +293,23 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Dados do treino',
-                      style: tema.titleMedium,
-                    ),
+                    Text('Dados do treino', style: tema.titleMedium),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<int>(
-                      initialValue:
-                          alunosTeste.containsKey(_alunoId)
-                              ? _alunoId
-                              : null,
-                      decoration: const InputDecoration(
-                        labelText: 'Aluno',
-                      ),
+                      initialValue: _alunos.any((u) => u.id == _alunoId)
+                          ? _alunoId
+                          : null,
+                      decoration: const InputDecoration(labelText: 'Aluno'),
                       items: [
-                        for (final e in alunosTeste.entries)
-                          DropdownMenuItem(
-                            value: e.key,
-                            child: Text(e.value),
-                          ),
+                        for (final e in _alunos)
+                          DropdownMenuItem(value: e.id, child: Text(e.nome)),
                       ],
                       onChanged: (v) {
                         setState(() {
                           _alunoId = v;
                         });
                       },
-                      validator: (v) =>
-                          v == null ? 'Escolha o aluno' : null,
+                      validator: (v) => v == null ? 'Escolha o aluno' : null,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -341,10 +317,9 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Nome do treino',
                       ),
-                      validator: (v) =>
-                          (v == null || v.trim().isEmpty)
-                              ? 'Informe o nome'
-                              : null,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Informe o nome'
+                          : null,
                     ),
                     const SizedBox(height: 12),
                     InkWell(
@@ -352,15 +327,12 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
                       child: InputDecorator(
                         decoration: InputDecoration(
                           labelText: 'Validade',
-                          suffixIcon:
-                              const Icon(Icons.calendar_today_outlined),
+                          suffixIcon: const Icon(Icons.calendar_today_outlined),
                           errorText: _validadeNoFuturo
                               ? null
                               : 'Escolha uma data a partir de amanhã',
                         ),
-                        child: Text(
-                          _data(_validade),
-                        ),
+                        child: Text(_data(_validade)),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -379,14 +351,8 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Exercícios',
-                  style: tema.titleMedium,
-                ),
-                Text(
-                  '${_itens.length} adicionados',
-                  style: tema.bodySmall,
-                ),
+                Text('Exercícios', style: tema.titleMedium),
+                Text('${_itens.length} adicionados', style: tema.bodySmall),
               ],
             ),
             const SizedBox(height: 8),
@@ -406,9 +372,7 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
                           ),
                         ),
                       ),
-                      title: Text(
-                        _itens[i].exercicio.nome,
-                      ),
+                      title: Text(_itens[i].exercicio.nome),
                       subtitle: Text(
                         '${_itens[i].series} x '
                         '${_itens[i].repeticoes} · '
@@ -433,21 +397,14 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
               icon: const Icon(Icons.add),
               label: const Text('Adicionar exercício'),
               style: OutlinedButton.styleFrom(
-                minimumSize: const Size(
-                  double.infinity,
-                  48,
-                ),
+                minimumSize: const Size(double.infinity, 48),
               ),
             ),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: _salvar,
               style: _estiloBotaoPrincipal(context),
-              child: Text(
-                _editando
-                    ? 'Salvar alterações'
-                    : 'Salvar treino',
-              ),
+              child: Text(_editando ? 'Salvar alterações' : 'Salvar treino'),
             ),
             if (_editando) ...[
               const SizedBox(height: 12),
@@ -457,13 +414,8 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
                 label: const Text('Excluir treino'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: corErro,
-                  side: BorderSide(
-                    color: corErro.withValues(alpha: 0.4),
-                  ),
-                  minimumSize: const Size(
-                    double.infinity,
-                    48,
-                  ),
+                  side: BorderSide(color: corErro.withValues(alpha: 0.4)),
+                  minimumSize: const Size(double.infinity, 48),
                 ),
               ),
             ],
@@ -478,17 +430,14 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
 class _AdicionarExercicioSheet extends StatefulWidget {
   final List<Exercicio> exercicios;
 
-  const _AdicionarExercicioSheet({
-    required this.exercicios,
-  });
+  const _AdicionarExercicioSheet({required this.exercicios});
 
   @override
   State<_AdicionarExercicioSheet> createState() =>
       _AdicionarExercicioSheetState();
 }
 
-class _AdicionarExercicioSheetState
-    extends State<_AdicionarExercicioSheet> {
+class _AdicionarExercicioSheetState extends State<_AdicionarExercicioSheet> {
   final _form = GlobalKey<FormState>();
 
   Exercicio? _escolhido;
@@ -565,9 +514,7 @@ class _AdicionarExercicioSheetState
               ? FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))
               : FilteringTextInputFormatter.digitsOnly,
         ],
-        decoration: InputDecoration(
-          labelText: rotulo,
-        ),
+        decoration: InputDecoration(labelText: rotulo),
         validator: validator,
       ),
     );
@@ -590,15 +537,10 @@ class _AdicionarExercicioSheetState
             DropdownButtonFormField<Exercicio>(
               initialValue: _escolhido,
               isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Exercício',
-              ),
+              decoration: const InputDecoration(labelText: 'Exercício'),
               items: [
                 for (final e in widget.exercicios)
-                  DropdownMenuItem(
-                    value: e,
-                    child: Text(e.nome),
-                  ),
+                  DropdownMenuItem(value: e, child: Text(e.nome)),
               ],
               onChanged: (v) {
                 setState(() {
