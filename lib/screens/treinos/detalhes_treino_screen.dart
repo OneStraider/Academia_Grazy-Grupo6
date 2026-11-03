@@ -5,17 +5,25 @@ import '../../models/treino_exercicios.dart';
 import '../../models/execucao_treino.dart';
 import '../../services/usuario_service.dart';
 import '../../services/execucao_service.dart';
+import '../../services/database_events.dart';
 import '../../services/treino_services.dart';
 import '../../theme/app_theme.dart';
 import 'executar_treinos_screen.dart';
 
 class _Dados {
+  final Treino treino;
   final List<TreinoExercicio> itens;
   final Set<int> concluidos;
   final String professorNome;
   final List<ExecucaoTreino> historico;
 
-  _Dados(this.itens, this.concluidos, this.professorNome, this.historico);
+  _Dados(
+    this.treino,
+    this.itens,
+    this.concluidos,
+    this.professorNome,
+    this.historico,
+  );
 }
 
 // Tela do aluno: detalhes do treino + botão de iniciar.
@@ -36,18 +44,34 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
   @override
   void initState() {
     super.initState();
+    DatabaseEvents.revision.addListener(_onDatabaseChanged);
     _futuro = _carregar();
+  }
+
+  @override
+  void dispose() {
+    DatabaseEvents.revision.removeListener(_onDatabaseChanged);
+    super.dispose();
+  }
+
+  void _onDatabaseChanged() {
+    if (mounted) _recarregar();
   }
 
   Future<_Dados> _carregar() async {
     final id = widget.treino.id!;
+    final treino = await _treinoService.buscarPorId(id) ?? widget.treino;
     final itens = await _treinoService.listarExercicios(id);
-    final concluidos = await _execucaoService.concluidosHoje(id);
-    final professor = await UsuarioService().buscarPorId(
-      widget.treino.professorId,
-    );
+    final concluidos = await _execucaoService.exerciciosConcluidos(id);
+    final professor = await UsuarioService().buscarPorId(treino.professorId);
     final historico = await _execucaoService.historico(id);
-    return _Dados(itens, concluidos, professor?.nome ?? 'Professor', historico);
+    return _Dados(
+      treino,
+      itens,
+      concluidos,
+      professor?.nome ?? 'Professor',
+      historico,
+    );
   }
 
   void _recarregar() {
@@ -87,12 +111,6 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
   @override
   Widget build(BuildContext context) {
     final tema = Theme.of(context).textTheme;
-    final t = widget.treino;
-
-    final agora = DateTime.now();
-    final hoje = DateTime(agora.year, agora.month, agora.day);
-    final vencido = t.status != 'ATIVO' || t.validade.isBefore(hoje);
-
     return Scaffold(
       appBar: AppBar(title: const Text('Detalhes do treino')),
       body: FutureBuilder<_Dados>(
@@ -106,14 +124,16 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
           }
 
           final dados = snapshot.data!;
+          final t = dados.treino;
+          final agora = DateTime.now();
+          final hoje = DateTime(agora.year, agora.month, agora.day);
+          final vencido = t.status != 'ATIVO' || t.validade.isBefore(hoje);
           final feitos = dados.concluidos.length;
-          final tudoFeito =
-              dados.itens.isNotEmpty &&
-              dados.itens.every((i) => dados.concluidos.contains(i.id));
+          final tudoFeito = t.concluidoEm != null;
 
           String rotuloBotao = 'Iniciar treino';
           if (tudoFeito) {
-            rotuloBotao = 'Refazer treino';
+            rotuloBotao = 'Concluído';
           } else if (feitos > 0) {
             rotuloBotao = 'Continuar treino';
           }
@@ -181,7 +201,7 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
                         margin: const EdgeInsets.only(top: 12),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFE3F4EB),
+                          color: AppTheme.sucessoSuave,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Row(
@@ -190,7 +210,7 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
                             SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                'Treino concluído hoje!',
+                                'Treino concluído!',
                                 style: TextStyle(
                                   color: AppTheme.sucesso,
                                   fontWeight: FontWeight.w700,
@@ -235,7 +255,7 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                   child: ElevatedButton.icon(
-                    onPressed: (vencido || dados.itens.isEmpty)
+                    onPressed: (vencido || tudoFeito || dados.itens.isEmpty)
                         ? null
                         : () => _iniciar(dados),
                     icon: const Icon(Icons.play_arrow),
@@ -254,7 +274,7 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
     final ex = te.exercicio;
 
     return ListTile(
-      tileColor: feito ? const Color(0xFFE3F4EB) : null,
+      tileColor: feito ? AppTheme.sucessoSuave : null,
       leading: CircleAvatar(
         radius: 15,
         backgroundColor: feito ? AppTheme.sucesso : AppTheme.primariaSuave,
@@ -263,7 +283,7 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
             : Text(
                 '$numero',
                 style: const TextStyle(
-                  fontSize: 12,
+                  fontSize: 14,
                   fontWeight: FontWeight.bold,
                   color: AppTheme.primaria,
                 ),
@@ -300,7 +320,7 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: destaque ? const Color(0xFFE3F4EB) : AppTheme.fundo,
+        color: destaque ? AppTheme.sucessoSuave : AppTheme.fundo,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -313,7 +333,7 @@ class _DetalhesTreinoScreenState extends State<DetalhesTreinoScreen> {
           Text(
             texto,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 14,
               fontWeight: FontWeight.w600,
               color: cor,
             ),

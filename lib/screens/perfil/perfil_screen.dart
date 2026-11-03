@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../models/treino.dart';
 import '../../services/treino_services.dart';
+import '../../services/database_events.dart';
+import '../../services/preferencias_app_service.dart';
 import '../../services/usuario_service.dart';
-import '../../theme/app_theme.dart';
 import '../agendamentos/agendamentos_screen.dart';
 import '../evolucao/evolucao_screen.dart';
 import '../exercicios/exercicios_screen.dart';
@@ -24,7 +25,18 @@ class _PerfilScreenState extends State<PerfilScreen> {
   @override
   void initState() {
     super.initState();
+    DatabaseEvents.revision.addListener(_onDatabaseChanged);
     _carregarProfessor();
+  }
+
+  @override
+  void dispose() {
+    DatabaseEvents.revision.removeListener(_onDatabaseChanged);
+    super.dispose();
+  }
+
+  void _onDatabaseChanged() {
+    if (mounted) _carregarProfessor();
   }
 
   Future<void> _carregarProfessor() async {
@@ -40,18 +52,28 @@ class _PerfilScreenState extends State<PerfilScreen> {
               !DateUtils.dateOnly(t.validade).isBefore(hoje),
         )
         .firstOrNull;
-    if (treino == null) return;
+    if (treino == null) {
+      if (mounted) {
+        setState(() {
+          _meuTreino = null;
+          _professorResponsavel = null;
+        });
+      }
+      return;
+    }
     final professor = await UsuarioService().buscarPorId(treino.professorId);
-    if (mounted)
+    if (mounted) {
       setState(() {
         _meuTreino = treino;
         _professorResponsavel = professor?.nome;
       });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final usuario = UsuarioService.usuarioLogado;
+    final cores = Theme.of(context).colorScheme;
     final nome = usuario?.nome ?? 'Sessão encerrada';
     final tipo = usuario?.ehProfessor == true
         ? 'Professor'
@@ -69,14 +91,13 @@ class _PerfilScreenState extends State<PerfilScreen> {
               children: [
                 CircleAvatar(
                   radius: 42,
-                  backgroundColor: AppTheme.primariaSuave,
+                  backgroundColor: cores.primaryContainer,
                   child: Text(
                     nome.isEmpty ? '?' : nome[0].toUpperCase(),
-                    style: const TextStyle(
-                      color: AppTheme.primaria,
+                    style: TextStyle(
                       fontSize: 34,
                       fontWeight: FontWeight.bold,
-                    ),
+                    ).copyWith(color: cores.onPrimaryContainer),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -88,13 +109,13 @@ class _PerfilScreenState extends State<PerfilScreen> {
                     vertical: 7,
                   ),
                   decoration: BoxDecoration(
-                    color: AppTheme.primariaSuave,
+                    color: cores.primaryContainer,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     tipo,
-                    style: const TextStyle(
-                      color: AppTheme.primaria,
+                    style: TextStyle(
+                      color: cores.onPrimaryContainer,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -124,9 +145,27 @@ class _PerfilScreenState extends State<PerfilScreen> {
             ),
           ),
           const SizedBox(height: 22),
-          Text('Atalhos', style: Theme.of(context).textTheme.titleLarge),
+          Text('Aparência', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 10),
-          Card(child: Column(children: _atalhos(usuario?.ehAluno == true))),
+          Card(
+            child: ValueListenableBuilder<bool>(
+              valueListenable: PreferenciasAppService.modoEscuro,
+              builder: (context, modoEscuro, _) => SwitchListTile.adaptive(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                secondary: const Icon(Icons.dark_mode_outlined),
+                title: const Text('Modo escuro'),
+                subtitle: const Text('Tema confortável para ambientes escuros'),
+                value: modoEscuro,
+                onChanged: PreferenciasAppService.definirModoEscuro,
+              ),
+            ),
+          ),
+          if (usuario?.ehAdmin != true) ...[
+            const SizedBox(height: 22),
+            Text('Atalhos', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 10),
+            Card(child: Column(children: _atalhos(usuario?.ehAluno == true))),
+          ],
           const SizedBox(height: 18),
           OutlinedButton.icon(
             onPressed: _sair,
@@ -134,8 +173,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
             label: const Text('Sair'),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size(double.infinity, 56),
-              foregroundColor: const Color(0xFFC53232),
-              side: const BorderSide(color: Color(0xFFF0B8B5)),
+              foregroundColor: cores.error,
+              side: BorderSide(color: cores.error.withValues(alpha: .35)),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
@@ -162,8 +201,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
           child: Text(
             valor,
             textAlign: TextAlign.right,
-            style: const TextStyle(
-              color: AppTheme.texto,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface,
               fontWeight: FontWeight.w600,
             ),
             overflow: TextOverflow.ellipsis,
@@ -217,18 +256,21 @@ class _PerfilScreenState extends State<PerfilScreen> {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: AppTheme.primariaSuave,
+              color: Theme.of(context).colorScheme.primaryContainer,
               borderRadius: BorderRadius.circular(13),
             ),
-            child: Icon(itens[i].$2, color: AppTheme.primaria),
+            child: Icon(
+              itens[i].$2,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
           ),
           title: Text(
             itens[i].$1,
             style: Theme.of(context).textTheme.titleMedium,
           ),
-          trailing: const Icon(
+          trailing: Icon(
             Icons.chevron_right,
-            color: AppTheme.textoSecundario,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
           onTap: itens[i].$3,
         ),

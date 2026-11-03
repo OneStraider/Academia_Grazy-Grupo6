@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../models/avaliacao_fisica.dart';
 import '../../models/usuario.dart';
 import '../../services/avaliacao_service.dart';
+import '../../services/database_events.dart';
 import '../../services/usuario_service.dart';
 import '../../theme/app_theme.dart';
 import 'avaliacao_screen.dart';
@@ -26,10 +27,21 @@ class _EvolucaoScreenState extends State<EvolucaoScreen> {
   @override
   void initState() {
     super.initState();
+    DatabaseEvents.revision.addListener(_onDatabaseChanged);
     _alunoId = UsuarioService.usuarioLogado?.id;
     _dados = Future.value([]);
     _carregarAlunos();
     _dados = _carregar();
+  }
+
+  @override
+  void dispose() {
+    DatabaseEvents.revision.removeListener(_onDatabaseChanged);
+    super.dispose();
+  }
+
+  void _onDatabaseChanged() {
+    if (mounted) setState(() => _dados = _carregar());
   }
 
   Future<void> _carregarAlunos() async {
@@ -242,7 +254,7 @@ class _EvolucaoScreenState extends State<EvolucaoScreen> {
       '${valor > 0 ? '+' : ''}${valor.toStringAsFixed(1)} kg',
       style: const TextStyle(
         color: Colors.white,
-        fontSize: 12,
+        fontSize: 14,
         fontWeight: FontWeight.bold,
       ),
     ),
@@ -259,7 +271,7 @@ class _EvolucaoScreenState extends State<EvolucaoScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icone, color: AppTheme.primaria),
+          Icon(icone, color: Theme.of(context).colorScheme.primary),
           const SizedBox(height: 12),
           Text(titulo, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 3),
@@ -286,13 +298,21 @@ class _EvolucaoScreenState extends State<EvolucaoScreen> {
             'Variação de peso',
             style: Theme.of(context).textTheme.titleMedium,
           ),
-          const SizedBox(height: 18),
+          Text(
+            'Peso corporal (kg)',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
           SizedBox(
             height: 120,
             width: double.infinity,
             child: CustomPaint(
               painter: _GraficoPesoPainter(
                 avaliacoes.reversed.map((e) => e.peso).toList(),
+                texto: Theme.of(context).colorScheme.onSurfaceVariant,
+                grade: Theme.of(context).colorScheme.outlineVariant,
+                destaque: Theme.of(context).colorScheme.primary,
+                fundo: Theme.of(context).colorScheme.surface,
               ),
             ),
           ),
@@ -331,12 +351,12 @@ class _EvolucaoScreenState extends State<EvolucaoScreen> {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: AppTheme.primariaSuave,
+                  color: Theme.of(context).colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(13),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.assignment_outlined,
-                  color: AppTheme.primaria,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
                 ),
               ),
               const SizedBox(width: 11),
@@ -391,9 +411,9 @@ class _EvolucaoScreenState extends State<EvolucaoScreen> {
         const SizedBox(height: 4),
         Text(
           valor,
-          style: const TextStyle(
+          style: TextStyle(
             fontWeight: FontWeight.w700,
-            color: AppTheme.texto,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
       ],
@@ -403,14 +423,14 @@ class _EvolucaoScreenState extends State<EvolucaoScreen> {
   Widget _statusImc(String texto) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
     decoration: BoxDecoration(
-      color: AppTheme.primariaSuave,
+      color: Theme.of(context).colorScheme.primaryContainer,
       borderRadius: BorderRadius.circular(20),
     ),
     child: Text(
       texto,
-      style: const TextStyle(
-        color: AppTheme.primaria,
-        fontSize: 10,
+      style: TextStyle(
+        color: Theme.of(context).colorScheme.onPrimaryContainer,
+        fontSize: 12,
         fontWeight: FontWeight.w700,
       ),
     ),
@@ -419,35 +439,40 @@ class _EvolucaoScreenState extends State<EvolucaoScreen> {
   Widget _vazio() => Container(
     padding: const EdgeInsets.symmetric(vertical: 42, horizontal: 20),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: AppTheme.borda),
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
     ),
     child: Column(
       children: [
         Container(
           width: 60,
           height: 60,
-          decoration: const BoxDecoration(
-            color: AppTheme.primariaSuave,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.primaryContainer,
             shape: BoxShape.circle,
           ),
-          child: const Icon(
+          child: Icon(
             Icons.show_chart,
             size: 28,
-            color: AppTheme.primaria,
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
           ),
         ),
         const SizedBox(height: 14),
-        const Text(
+        Text(
           'Sua evolução começa aqui',
-          style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.texto),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
         ),
         const SizedBox(height: 6),
-        const Text(
+        Text(
           'Quando uma avaliação for registrada, seus indicadores e histórico aparecerão nesta tela.',
           textAlign: TextAlign.center,
-          style: TextStyle(color: AppTheme.textoSecundario),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     ),
@@ -459,7 +484,17 @@ class _EvolucaoScreenState extends State<EvolucaoScreen> {
 
 class _GraficoPesoPainter extends CustomPainter {
   final List<double> valores;
-  _GraficoPesoPainter(this.valores);
+  final Color texto;
+  final Color grade;
+  final Color destaque;
+  final Color fundo;
+  _GraficoPesoPainter(
+    this.valores, {
+    required this.texto,
+    required this.grade,
+    required this.destaque,
+    required this.fundo,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -467,24 +502,45 @@ class _GraficoPesoPainter extends CustomPainter {
     final min = valores.reduce(math.min);
     final max = valores.reduce(math.max);
     final faixa = math.max(max - min, 1.0);
+    const margemEsquerda = 42.0;
+    const margemDireita = 8.0;
+    final larguraGrafico = size.width - margemEsquerda - margemDireita;
     final pts = <Offset>[];
     for (var i = 0; i < valores.length; i++) {
       final x = valores.length == 1
-          ? size.width / 2
-          : i * size.width / (valores.length - 1);
+          ? margemEsquerda + larguraGrafico / 2
+          : margemEsquerda + i * larguraGrafico / (valores.length - 1);
       final y =
           size.height - 12 - ((valores[i] - min) / faixa) * (size.height - 24);
       pts.add(Offset(x, y));
     }
     final grid = Paint()
-      ..color = AppTheme.borda
+      ..color = grade
       ..strokeWidth = 1;
+    canvas.drawLine(
+      const Offset(margemEsquerda, 0),
+      Offset(margemEsquerda, size.height),
+      grid,
+    );
     for (var i = 0; i < 3; i++) {
       final y = i * size.height / 2;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+      canvas.drawLine(
+        Offset(margemEsquerda, y),
+        Offset(size.width - margemDireita, y),
+        grid,
+      );
+      final valor = max - (faixa * i / 2);
+      final label = TextPainter(
+        text: TextSpan(
+          text: valor.toStringAsFixed(1),
+          style: TextStyle(color: texto, fontSize: 11),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: margemEsquerda - 4);
+      label.paint(canvas, Offset(0, y - label.height / 2));
     }
     final linha = Paint()
-      ..color = AppTheme.primaria
+      ..color = destaque
       ..strokeWidth = 3
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
@@ -494,8 +550,8 @@ class _GraficoPesoPainter extends CustomPainter {
       path.lineTo(p.dx, p.dy);
     }
     canvas.drawPath(path, linha);
-    final ponto = Paint()..color = AppTheme.primaria;
-    final centro = Paint()..color = Colors.white;
+    final ponto = Paint()..color = destaque;
+    final centro = Paint()..color = fundo;
     for (final p in pts) {
       canvas.drawCircle(p, 5, ponto);
       canvas.drawCircle(p, 2.5, centro);
@@ -504,5 +560,9 @@ class _GraficoPesoPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _GraficoPesoPainter oldDelegate) =>
-      oldDelegate.valores != valores;
+      oldDelegate.valores != valores ||
+      oldDelegate.texto != texto ||
+      oldDelegate.grade != grade ||
+      oldDelegate.destaque != destaque ||
+      oldDelegate.fundo != fundo;
 }

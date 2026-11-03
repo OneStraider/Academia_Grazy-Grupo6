@@ -2,7 +2,9 @@ class DatabaseTables {
   static const String usuario = '''CREATE TABLE usuario (
     id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE, senha_hash TEXT NOT NULL,
-    tipo TEXT NOT NULL CHECK(tipo IN ('ADMIN','PROFESSOR','ALUNO'))
+    tipo TEXT NOT NULL CHECK(tipo IN ('ADMIN','PROFESSOR','ALUNO')),
+    ativo INTEGER NOT NULL DEFAULT 1 CHECK(ativo IN (0,1)),
+    criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )''';
   static const String exercicio = '''CREATE TABLE exercicio (
     id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL,
@@ -12,7 +14,8 @@ class DatabaseTables {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     aluno_id INTEGER NOT NULL REFERENCES usuario(id),
     professor_id INTEGER NOT NULL REFERENCES usuario(id), nome TEXT NOT NULL,
-    validade TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'ATIVO', observacoes TEXT
+    validade TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'ATIVO', observacoes TEXT,
+    concluido_em TEXT, criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )''';
   static const String treinoExercicio = '''CREATE TABLE treino_exercicio (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,5 +57,21 @@ class DatabaseTables {
     id INTEGER PRIMARY KEY AUTOINCREMENT, aluno_id INTEGER NOT NULL UNIQUE REFERENCES usuario(id),
     condicoes TEXT NOT NULL DEFAULT '', medicamentos TEXT NOT NULL DEFAULT '',
     restricoes TEXT NOT NULL DEFAULT '', atualizado_em TEXT NOT NULL
+  )''';
+
+  static const String notificacao = '''CREATE TABLE notificacao (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    destinatario_id INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
+    tipo TEXT NOT NULL CHECK(tipo IN ('TREINO_ATRIBUIDO','TREINO_CONCLUIDO','AVALIACAO_REALIZADA')),
+    titulo TEXT NOT NULL,
+    mensagem TEXT NOT NULL,
+    treino_id INTEGER REFERENCES treino(id) ON DELETE CASCADE,
+    avaliacao_id INTEGER REFERENCES avaliacao_fisica(id) ON DELETE CASCADE,
+    criado_em TEXT NOT NULL,
+    lida_em TEXT
+  )''';
+
+  static const String preferenciaApp = '''CREATE TABLE preferencia_app (
+    chave TEXT PRIMARY KEY, valor TEXT NOT NULL
   )''';
 }

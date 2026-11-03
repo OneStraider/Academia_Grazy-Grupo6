@@ -1,11 +1,8 @@
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
-import 'dart:convert';
-
-import 'package:crypto/crypto.dart';
-
 import 'database_tables.dart';
+import '../services/password_hasher.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._internal();
@@ -39,7 +36,7 @@ class DatabaseHelper {
       // 1 -> exercicio
       // 2 -> treino e treino_exercicio
       // 3 -> execucao_exercicio e feedback
-      version: 6,
+      version: 10,
 
       // Habilita as foreign keys do SQLite.
       onConfigure: (db) async {
@@ -58,6 +55,8 @@ class DatabaseHelper {
         await db.execute(DatabaseTables.agendamento);
         await db.execute(DatabaseTables.avaliacao);
         await db.execute(DatabaseTables.anamnese);
+        await db.execute(DatabaseTables.notificacao);
+        await db.execute(DatabaseTables.preferenciaApp);
         await _seed(db);
       },
 
@@ -107,12 +106,108 @@ class DatabaseHelper {
             'ALTER TABLE horario_aula ADD COLUMN min_participantes INTEGER NOT NULL DEFAULT 1',
           );
         }
+
+        if (oldVersion < 7) {
+          // Databases upgraded from versions before 4 create the current
+          // training table above, which already includes this column.
+          if (oldVersion >= 4) {
+            await db.execute('ALTER TABLE treino ADD COLUMN concluido_em TEXT');
+          }
+          await db.execute(DatabaseTables.notificacao);
+          await db.execute('''
+            UPDATE treino
+            SET concluido_em = (
+              SELECT MAX(ex.data_execucao)
+              FROM treino_exercicio te
+              JOIN execucao_exercicio ex ON ex.treino_exercicio_id = te.id
+              JOIN feedback f ON f.execucao_id = ex.id
+              WHERE te.treino_id = treino.id
+            )
+            WHERE concluido_em IS NULL
+              AND (SELECT COUNT(*) FROM treino_exercicio te
+                   WHERE te.treino_id = treino.id) > 0
+              AND (SELECT COUNT(DISTINCT te.id)
+                   FROM treino_exercicio te
+                   JOIN execucao_exercicio ex ON ex.treino_exercicio_id = te.id
+                   JOIN feedback f ON f.execucao_id = ex.id
+                   WHERE te.treino_id = treino.id)
+                  = (SELECT COUNT(*) FROM treino_exercicio te
+                     WHERE te.treino_id = treino.id)
+          ''');
+        }
+        if (oldVersion < 8) {
+          await db.execute(DatabaseTables.preferenciaApp);
+        }
+        await migrarEsquemaAdministrativo(db, oldVersion, newVersion);
+        if (oldVersion < 10) {
+          await _migrarNotificacoesAvaliacao(db);
+        }
       },
     );
   }
 
+  /// Permite notificações ligadas a avaliações sem referência a um treino.
+  /// Copia os registros existentes para preservar o histórico do usuário.
+  static Future<void> _migrarNotificacoesAvaliacao(Database db) async {
+    await db.execute('''
+      CREATE TABLE notificacao_nova (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        destinatario_id INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
+        tipo TEXT NOT NULL CHECK(tipo IN ('TREINO_ATRIBUIDO','TREINO_CONCLUIDO','AVALIACAO_REALIZADA')),
+        titulo TEXT NOT NULL,
+        mensagem TEXT NOT NULL,
+        treino_id INTEGER REFERENCES treino(id) ON DELETE CASCADE,
+        avaliacao_id INTEGER REFERENCES avaliacao_fisica(id) ON DELETE CASCADE,
+        criado_em TEXT NOT NULL,
+        lida_em TEXT
+      )
+    ''');
+    await db.execute('''
+      INSERT INTO notificacao_nova
+        (id, destinatario_id, tipo, titulo, mensagem, treino_id, criado_em, lida_em)
+      SELECT id, destinatario_id, tipo, titulo, mensagem, treino_id, criado_em, lida_em
+      FROM notificacao
+    ''');
+    await db.execute('DROP TABLE notificacao');
+    await db.execute('ALTER TABLE notificacao_nova RENAME TO notificacao');
+  }
+
+  /// Adiciona estado e datas administrativas sem apagar os registros existentes.
+  static Future<void> migrarEsquemaAdministrativo(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
+    if (oldVersion >= 9 || newVersion < 9) return;
+    final usuarioColunas = (await db.rawQuery('PRAGMA table_info(usuario)'))
+        .map((coluna) => coluna['name'] as String)
+        .toSet();
+    final treinoColunas = (await db.rawQuery('PRAGMA table_info(treino)'))
+        .map((coluna) => coluna['name'] as String)
+        .toSet();
+    if (!usuarioColunas.contains('ativo')) {
+      await db.execute(
+        'ALTER TABLE usuario ADD COLUMN ativo INTEGER NOT NULL DEFAULT 1 CHECK(ativo IN (0,1))',
+      );
+    }
+    if (!usuarioColunas.contains('criado_em')) {
+      await db.execute('ALTER TABLE usuario ADD COLUMN criado_em TEXT');
+    }
+    if (!treinoColunas.contains('criado_em')) {
+      await db.execute('ALTER TABLE treino ADD COLUMN criado_em TEXT');
+    }
+    // O esquema anterior não guardava datas de criação. Registros existentes
+    // recebem a data de atualização do app como marco de início das métricas.
+    await db.execute(
+      "UPDATE usuario SET criado_em = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE criado_em IS NULL",
+    );
+    await db.execute(
+      "UPDATE treino SET criado_em = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE criado_em IS NULL",
+    );
+  }
+
   Future<void> _seed(Database db) async {
-    final hash = sha256.convert(utf8.encode('grazy123')).toString();
+    final hash = await PasswordHasher.hash('grazy123');
     for (final user in [
       ['Administrador', 'admin@academiagrazy.com', 'ADMIN'],
       ['Prof. Carlos', 'professor@academiagrazy.com', 'PROFESSOR'],

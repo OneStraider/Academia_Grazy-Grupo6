@@ -1,11 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import '../../models/treino.dart';
 import '../../models/treino_exercicios.dart';
 import '../../services/execucao_service.dart';
-import '../../theme/app_theme.dart';
+import '../../services/usuario_service.dart';
 
 class _Feedback {
   final String nivel;
@@ -133,48 +134,52 @@ class _ExecutarTreinoScreenState extends State<ExecutarTreinoScreen> {
     final item = _item;
 
     try {
-      // REQ-06: grava a execução.
-      final execucaoId = await _execucaoService.registrarExecucao(
-        treinoExercicioId: item.id!,
-        series: item.series,
-        carga: _carga,
-        repeticoes: _reps,
-      );
-
-      if (!mounted) return;
-
       final feedback = await showModalBottomSheet<_Feedback>(
         context: context,
         isScrollControlled: true,
         isDismissible: false,
         enableDrag: false,
-        backgroundColor: AppTheme.superficie,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         builder: (_) => _FeedbackSheet(
           nomeExercicio: item.exercicio!.nome,
-          resumo: '${item.series} séries · ${_fmt(_carga)} kg · '
+          resumo:
+              '${item.series} séries · ${_fmt(_carga)} kg · '
               '$_reps repetições',
         ),
       );
 
-      // REQ-07: grava o feedback (se o aluno não tocou em "Pular").
-      if (feedback != null) {
-        await _execucaoService.registrarFeedback(
-          execucaoId: execucaoId,
-          nivel: feedback.nivel,
-          comentario: feedback.comentario,
-        );
-      }
+      if (!mounted || feedback == null) return;
+
+      final alunoId = UsuarioService.usuarioLogado?.id;
+      if (alunoId == null) throw StateError('Faça login novamente.');
+      final treinoConcluido = await _execucaoService
+          .registrarExercicioComFeedback(
+            treinoId: widget.treino.id!,
+            treinoExercicioId: item.id!,
+            alunoId: alunoId,
+            series: item.series,
+            carga: _carga,
+            repeticoes: _reps,
+            nivel: feedback.nivel,
+            comentario: feedback.comentario,
+          );
 
       if (!mounted) return;
 
       if (_ehUltimo) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Treino concluído!')),
+          SnackBar(
+            content: Text(
+              treinoConcluido
+                  ? 'Treino concluído!'
+                  : 'Exercício salvo. Ainda há exercícios pendentes.',
+            ),
+          ),
         );
-        Navigator.pop(context, true);
+        Navigator.pop(context, treinoConcluido);
         return;
       }
 
@@ -184,9 +189,8 @@ class _ExecutarTreinoScreenState extends State<ExecutarTreinoScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao salvar: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erro ao salvar: $e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -244,10 +248,7 @@ class _ExecutarTreinoScreenState extends State<ExecutarTreinoScreen> {
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: _sair,
-        ),
+        leading: IconButton(icon: const Icon(Icons.close), onPressed: _sair),
         title: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -276,8 +277,8 @@ class _ExecutarTreinoScreenState extends State<ExecutarTreinoScreen> {
                         margin: const EdgeInsets.symmetric(horizontal: 2),
                         decoration: BoxDecoration(
                           color: i <= _indice
-                              ? AppTheme.primaria
-                              : AppTheme.borda,
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.outlineVariant,
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -295,33 +296,48 @@ class _ExecutarTreinoScreenState extends State<ExecutarTreinoScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            height: 120,
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              color: AppTheme.primariaSuave,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.fitness_center,
-                              color: AppTheme.primaria,
-                              size: 40,
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: AspectRatio(
+                              aspectRatio: 16 / 9,
+                              child: ex.imagemUrl == null
+                                  ? ColoredBox(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primaryContainer,
+                                      child: Center(
+                                        child: Icon(
+                                          Icons.fitness_center,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onPrimaryContainer,
+                                          size: 40,
+                                        ),
+                                      ),
+                                    )
+                                  : _imagemExercicio(ex.imagemUrl!),
                             ),
                           ),
                           const SizedBox(height: 12),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
                             decoration: BoxDecoration(
-                              color: AppTheme.fundo,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest,
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
                               ex.grupoMuscular,
-                              style: const TextStyle(
-                                fontSize: 12,
+                              style: TextStyle(
+                                fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: AppTheme.textoSecundario,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
                               ),
                             ),
                           ),
@@ -355,13 +371,17 @@ class _ExecutarTreinoScreenState extends State<ExecutarTreinoScreen> {
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     color: i < _serieAtual - 1
-                                        ? AppTheme.primaria
+                                        ? Theme.of(context).colorScheme.primary
                                         : (i == _serieAtual - 1
-                                            ? Colors.white
-                                            : AppTheme.borda),
+                                              ? Colors.white
+                                              : Theme.of(context)
+                                                    .colorScheme
+                                                    .outlineVariant),
                                     border: i == _serieAtual - 1
                                         ? Border.all(
-                                            color: AppTheme.primaria,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
                                             width: 2,
                                           )
                                         : null,
@@ -398,24 +418,33 @@ class _ExecutarTreinoScreenState extends State<ExecutarTreinoScreen> {
                   const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
-                      color: AppTheme.primariaSuave,
+                      color: Theme.of(context).colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.timer_outlined,
-                            color: AppTheme.primaria, size: 20),
+                        Icon(
+                          Icons.timer_outlined,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onPrimaryContainer,
+                          size: 20,
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             _descansando
                                 ? 'Descansando... ${_restante}s'
                                 : 'Descanso de ${item.descansoSegundos}s '
-                                    'depois de cada série',
-                            style: const TextStyle(
-                              color: AppTheme.primaria,
+                                      'depois de cada série',
+                            style: TextStyle(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onPrimaryContainer,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -437,8 +466,9 @@ class _ExecutarTreinoScreenState extends State<ExecutarTreinoScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ElevatedButton.icon(
-                    onPressed:
-                        (_descansando || _salvando) ? null : _finalizarSerie,
+                    onPressed: (_descansando || _salvando)
+                        ? null
+                        : _finalizarSerie,
                     icon: const Icon(Icons.check),
                     label: const Text('Finalizar série'),
                   ),
@@ -449,7 +479,7 @@ class _ExecutarTreinoScreenState extends State<ExecutarTreinoScreen> {
                       minimumSize: const Size(double.infinity, 50),
                     ),
                     child: Text(
-                      _ehUltimo ? 'Encerrar treino' : 'Próximo exercício',
+                      _ehUltimo ? 'Sair sem concluir' : 'Pular exercício',
                     ),
                   ),
                 ],
@@ -459,6 +489,22 @@ class _ExecutarTreinoScreenState extends State<ExecutarTreinoScreen> {
         ),
       ),
     );
+  }
+
+  Widget _imagemExercicio(String caminho) {
+    final erro = (context, _, _) => ColoredBox(
+      color: Theme.of(context).colorScheme.primaryContainer,
+      child: Center(
+        child: Icon(
+          Icons.broken_image_outlined,
+          color: Theme.of(context).colorScheme.onPrimaryContainer,
+        ),
+      ),
+    );
+    if (caminho.startsWith('http://') || caminho.startsWith('https://')) {
+      return Image.network(caminho, fit: BoxFit.cover, errorBuilder: erro);
+    }
+    return Image.file(File(caminho), fit: BoxFit.cover, errorBuilder: erro);
   }
 
   Widget _ajuste({
@@ -486,10 +532,7 @@ class _ExecutarTreinoScreenState extends State<ExecutarTreinoScreen> {
               style: tema.titleMedium,
             ),
           ),
-          IconButton.outlined(
-            onPressed: onMais,
-            icon: const Icon(Icons.add),
-          ),
+          IconButton.outlined(onPressed: onMais, icon: const Icon(Icons.add)),
         ],
       ),
     );
@@ -525,127 +568,125 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
 
   void _enviar() {
     final texto = _comentario.text.trim();
-    Navigator.pop(
-      context,
-      _Feedback(_nivel, texto.isEmpty ? null : texto),
-    );
+    Navigator.pop(context, _Feedback(_nivel, texto.isEmpty ? null : texto));
   }
 
   @override
   Widget build(BuildContext context) {
     final tema = Theme.of(context).textTheme;
+    final esquema = Theme.of(context).colorScheme;
 
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          12,
-          20,
-          MediaQuery.of(context).viewInsets.bottom + 16,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppTheme.borda,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  const CircleAvatar(
-                    radius: 22,
-                    backgroundColor: Color(0xFFE3F4EB),
-                    child: Icon(Icons.check, color: AppTheme.sucesso),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${widget.nomeExercicio} concluído',
-                          style: tema.titleMedium,
-                        ),
-                        Text(widget.resumo, style: tema.bodySmall),
-                      ],
+    return PopScope(
+      canPop: false,
+      child: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            12,
+            20,
+            MediaQuery.of(context).viewInsets.bottom + 16,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: esquema.outlineVariant,
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Text('Como foi o exercício?', style: tema.titleMedium),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  for (final n in _niveis)
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 22,
+                      backgroundColor: esquema.primaryContainer,
+                      child: Icon(
+                        Icons.check,
+                        color: esquema.onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: InkWell(
-                          onTap: () => setState(() {
-                            _nivel = n[0];
-                          }),
-                          borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: _nivel == n[0]
-                                  ? AppTheme.primariaSuave
-                                  : AppTheme.superficie,
-                              border: Border.all(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${widget.nomeExercicio} concluído',
+                            style: tema.titleMedium,
+                          ),
+                          Text(widget.resumo, style: tema.bodySmall),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Text('Como foi o exercício?', style: tema.titleMedium),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    for (final n in _niveis)
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: InkWell(
+                            onTap: () => setState(() {
+                              _nivel = n[0];
+                            }),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
                                 color: _nivel == n[0]
-                                    ? AppTheme.primaria
-                                    : AppTheme.borda,
-                                width: _nivel == n[0] ? 2 : 1,
+                                    ? esquema.primaryContainer
+                                    : esquema.surfaceContainerLow,
+                                border: Border.all(
+                                  color: _nivel == n[0]
+                                      ? esquema.primary
+                                      : esquema.outlineVariant,
+                                  width: _nivel == n[0] ? 2 : 1,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              n[1],
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.texto,
+                              child: Text(
+                                n[1],
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: esquema.onSurface,
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _comentario,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Comentário (opcional)',
-                  alignLabelWithHint: true,
+                  ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _enviar,
-                child: const Text('Enviar e continuar'),
-              ),
-              Center(
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Pular'),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _comentario,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Comentário (opcional)',
+                    alignLabelWithHint: true,
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: _enviar,
+                  child: const Text('Enviar e continuar'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

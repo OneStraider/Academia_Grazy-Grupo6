@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/agendamento_service.dart';
+import '../../services/database_events.dart';
 import '../../services/usuario_service.dart';
 import '../../theme/app_theme.dart';
 import 'agendamento_detalhes_screen.dart';
@@ -17,16 +18,28 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
   late DateTime _diaSelecionado;
   late final List<DateTime> _dias;
 
-  bool get _ehProfessor => UsuarioService.usuarioLogado?.ehProfessor == true;
+  bool get _ehProfessor =>
+      UsuarioService.usuarioLogado?.ehProfessor == true ||
+      UsuarioService.usuarioLogado?.ehAdmin == true;
 
   @override
   void initState() {
     super.initState();
-    final amanha = DateUtils.dateOnly(DateTime.now())
-        .add(const Duration(days: 1));
-    _dias = List.generate(7, (i) => amanha.add(Duration(days: i)));
+    DatabaseEvents.revision.addListener(_onDatabaseChanged);
+    final hoje = DateUtils.dateOnly(DateTime.now());
+    _dias = List.generate(7, (i) => hoje.add(Duration(days: i)));
     _diaSelecionado = _dias.first;
     _carregar();
+  }
+
+  @override
+  void dispose() {
+    DatabaseEvents.revision.removeListener(_onDatabaseChanged);
+    super.dispose();
+  }
+
+  void _onDatabaseChanged() {
+    if (mounted) _atualizar();
   }
 
   void _carregar() {
@@ -105,7 +118,7 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
 
   Future<void> _checkin(int id) async {
     try {
-      await _service.checkin(id);
+      await _service.checkin(id, alunoId: UsuarioService.usuarioLogado!.id!);
       await _atualizar();
       if (mounted)
         ScaffoldMessenger.of(
@@ -138,7 +151,7 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
     );
     if (confirma != true) return;
     try {
-      await _service.cancelar(id);
+      await _service.cancelar(id, alunoId: UsuarioService.usuarioLogado!.id!);
       await _atualizar();
     } catch (e) {
       if (mounted)
@@ -279,6 +292,14 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
           itemBuilder: (context, index) {
             final dia = _dias[index];
             final selecionado = DateUtils.isSameDay(dia, _diaSelecionado);
+            final esquema = Theme.of(context).colorScheme;
+            final escuro = Theme.of(context).brightness == Brightness.dark;
+            final corSelecionada = escuro
+                ? esquema.primaryContainer
+                : AppTheme.primaria;
+            final textoSelecionado = escuro
+                ? esquema.onPrimaryContainer
+                : Colors.white;
             return InkWell(
               borderRadius: BorderRadius.circular(16),
               onTap: () => setState(() => _diaSelecionado = dia),
@@ -286,10 +307,14 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
                 duration: const Duration(milliseconds: 160),
                 width: 54,
                 decoration: BoxDecoration(
-                  color: selecionado ? AppTheme.primaria : Colors.white,
+                  color: selecionado
+                      ? corSelecionada
+                      : esquema.surfaceContainerLow,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: selecionado ? AppTheme.primaria : AppTheme.borda,
+                    color: selecionado
+                        ? corSelecionada
+                        : esquema.outlineVariant,
                   ),
                 ),
                 child: Column(
@@ -299,16 +324,18 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
                       _diaSemana(dia),
                       style: TextStyle(
                         color: selecionado
-                            ? Colors.white70
-                            : AppTheme.textoSecundario,
-                        fontSize: 12,
+                            ? textoSelecionado.withValues(alpha: .78)
+                            : esquema.onSurfaceVariant,
+                        fontSize: 14,
                       ),
                     ),
                     const SizedBox(height: 5),
                     Text(
                       '${dia.day}',
                       style: TextStyle(
-                        color: selecionado ? Colors.white : AppTheme.texto,
+                        color: selecionado
+                            ? textoSelecionado
+                            : esquema.onSurface,
                         fontWeight: FontWeight.bold,
                         fontSize: 18,
                       ),
@@ -330,9 +357,9 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
       if (acao != null)
         Text(
           acao,
-          style: const TextStyle(
-            color: AppTheme.primaria,
-            fontSize: 12,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.primary,
+            fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -456,6 +483,7 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
   }
 
   Widget _cardAgendadoCompacto(Map<String, Object?> aula) {
+    final esquema = Theme.of(context).colorScheme;
     final inicio = DateTime.parse(aula['inicio'] as String);
     final id = aula['agendamento_id'] as int;
     final hora =
@@ -470,12 +498,12 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: AppTheme.primariaSuave,
+                color: esquema.primaryContainer,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.event_available_outlined,
-                color: AppTheme.primaria,
+                color: esquema.onPrimaryContainer,
                 size: 21,
               ),
             ),
@@ -494,7 +522,7 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
                   Text(
                     hora,
                     style: Theme.of(context).textTheme.bodySmall
-                        ?.copyWith(color: AppTheme.textoSecundario),
+                        ?.copyWith(color: esquema.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -540,12 +568,12 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
                 width: 54,
                 height: 54,
                 decoration: BoxDecoration(
-                  color: AppTheme.primariaSuave,
+                  color: Theme.of(context).colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.fitness_center,
-                  color: AppTheme.primaria,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
                 ),
               ),
               const SizedBox(width: 12),
@@ -592,9 +620,9 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
                   child: Text(cheio ? 'Lotado' : 'Agendar'),
                 )
               else if (_ehProfessor)
-                const Icon(
+                Icon(
                   Icons.chevron_right,
-                  color: AppTheme.textoSecundario,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
             ],
           ),
@@ -603,48 +631,57 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
     );
   }
 
-  Widget _badge(String label, {bool claro = false}) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-    decoration: BoxDecoration(
-      color: claro
-          ? Colors.white.withValues(alpha: .18)
-          : AppTheme.primariaSuave,
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Text(
-      label,
-      style: TextStyle(
-        color: claro ? Colors.white : AppTheme.primaria,
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
+  Widget _badge(String label, {bool claro = false}) {
+    final esquema = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: claro
+            ? Colors.white.withValues(alpha: .18)
+            : esquema.primaryContainer,
+        borderRadius: BorderRadius.circular(20),
       ),
-    ),
-  );
+      child: Text(
+        label,
+        style: TextStyle(
+          color: claro ? Colors.white : esquema.onPrimaryContainer,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
 
   Widget _vazio({bool temReserva = false}) => Container(
     padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: AppTheme.borda),
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
     ),
     child: Column(
       children: [
         Container(
           width: 54,
           height: 54,
-          decoration: const BoxDecoration(
-            color: AppTheme.primariaSuave,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.primaryContainer,
             shape: BoxShape.circle,
           ),
-          child: const Icon(Icons.event_busy, color: AppTheme.primaria),
+          child: Icon(
+            Icons.event_busy,
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
+          ),
         ),
         const SizedBox(height: 12),
         Text(
           temReserva
               ? 'Nenhum outro horário disponível neste dia'
               : 'Nenhum horário neste dia',
-          style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.texto),
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
         ),
         const SizedBox(height: 4),
         Text(
@@ -653,7 +690,9 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
               : _ehProfessor
               ? 'Adicione um horário para abrir vagas.'
               : 'Escolha outra data para ver as aulas.',
-          style: const TextStyle(color: AppTheme.textoSecundario),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           textAlign: TextAlign.center,
         ),
       ],
@@ -663,14 +702,14 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
   Widget _vazioAgendamentos() => Container(
     padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: AppTheme.borda),
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
     ),
-    child: const Text(
+    child: Text(
       'Você ainda não tem aulas agendadas para este dia.',
       textAlign: TextAlign.center,
-      style: TextStyle(color: AppTheme.textoSecundario),
+      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
     ),
   );
 }
@@ -697,8 +736,16 @@ class _FormularioHorarioState extends State<_FormularioHorario> {
   void initState() {
     super.initState();
     final horario = widget.horario;
+    final agora = DateTime.now();
+    final horarioSugerido = agora.add(const Duration(hours: 1, minutes: 10));
     final inicio = horario == null
-        ? DateUtils.dateOnly(DateTime.now()).add(const Duration(days: 1))
+        ? DateTime(
+            agora.year,
+            agora.month,
+            agora.day,
+            horarioSugerido.day == agora.day ? horarioSugerido.hour : 23,
+            horarioSugerido.day == agora.day ? horarioSugerido.minute : 59,
+          )
         : DateTime.parse(horario['inicio'] as String);
     _nome = TextEditingController(text: horario?['nome_aula'] as String? ?? '');
     _vagas = TextEditingController(text: '${horario?['capacidade'] ?? 8}');
@@ -719,7 +766,7 @@ class _FormularioHorarioState extends State<_FormularioHorario> {
 
   Future<void> _escolherData() async {
     final hoje = DateUtils.dateOnly(DateTime.now());
-    final primeiroDia = _editando ? hoje : hoje.add(const Duration(days: 1));
+    final primeiroDia = hoje;
     final data = await showDatePicker(
       context: context,
       initialDate: _data.isBefore(primeiroDia) ? primeiroDia : _data,
@@ -860,6 +907,7 @@ class _GerenciarHorarioSheetState extends State<_GerenciarHorarioSheet> {
   @override
   void initState() {
     super.initState();
+    DatabaseEvents.revision.addListener(_atualizarParticipantes);
     _nome = TextEditingController(text: widget.horario['nome_aula'] as String);
     _vagas = TextEditingController(text: '${widget.horario['capacidade']}');
     _minimo = TextEditingController(
@@ -873,10 +921,20 @@ class _GerenciarHorarioSheetState extends State<_GerenciarHorarioSheet> {
 
   @override
   void dispose() {
+    DatabaseEvents.revision.removeListener(_atualizarParticipantes);
     _nome.dispose();
     _vagas.dispose();
     _minimo.dispose();
     super.dispose();
+  }
+
+  void _atualizarParticipantes() {
+    if (!mounted) return;
+    setState(() {
+      _participantes = _service.listarParticipantes(
+        widget.horario['id'] as int,
+      );
+    });
   }
 
   Future<void> _escolherData() async {
@@ -967,8 +1025,8 @@ class _GerenciarHorarioSheetState extends State<_GerenciarHorarioSheet> {
         padding: EdgeInsets.only(
           bottom: MediaQuery.viewInsetsOf(context).bottom,
         ),
-        decoration: const BoxDecoration(
-          color: Colors.white,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
@@ -979,7 +1037,7 @@ class _GerenciarHorarioSheetState extends State<_GerenciarHorarioSheet> {
               width: 38,
               height: 4,
               decoration: BoxDecoration(
-                color: AppTheme.borda,
+                color: Theme.of(context).colorScheme.outlineVariant,
                 borderRadius: BorderRadius.circular(4),
               ),
             ),
@@ -1031,6 +1089,7 @@ class _GerenciarHorarioSheetState extends State<_GerenciarHorarioSheet> {
       final minimo = widget.horario['min_participantes'] as int? ?? 1;
       final capacidade = widget.horario['capacidade'] as int;
       final atingiuMinimo = participantes.length >= minimo;
+      final esquema = Theme.of(context).colorScheme;
       final inicio = DateTime.parse(widget.horario['inicio'] as String);
       final progresso = (participantes.length / minimo).clamp(0.0, 1.0);
       return Column(
@@ -1050,8 +1109,8 @@ class _GerenciarHorarioSheetState extends State<_GerenciarHorarioSheet> {
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: atingiuMinimo
-                  ? const Color(0xFFE8F5EE)
-                  : const Color(0xFFFFF5E5),
+                  ? esquema.primaryContainer
+                  : esquema.tertiaryContainer,
               borderRadius: BorderRadius.circular(14),
             ),
             child: Column(
@@ -1063,8 +1122,8 @@ class _GerenciarHorarioSheetState extends State<_GerenciarHorarioSheet> {
                       : 'Aula ainda não confirmada',
                   style: TextStyle(
                     color: atingiuMinimo
-                        ? AppTheme.sucesso
-                        : const Color(0xFF9A6700),
+                        ? esquema.onPrimaryContainer
+                        : esquema.onTertiaryContainer,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -1077,7 +1136,7 @@ class _GerenciarHorarioSheetState extends State<_GerenciarHorarioSheet> {
                   value: progresso,
                   minHeight: 7,
                   borderRadius: BorderRadius.circular(8),
-                  color: atingiuMinimo ? AppTheme.sucesso : AppTheme.primaria,
+                  color: atingiuMinimo ? esquema.primary : esquema.tertiary,
                 ),
                 if (!atingiuMinimo) ...[
                   const SizedBox(height: 6),
@@ -1106,13 +1165,15 @@ class _GerenciarHorarioSheetState extends State<_GerenciarHorarioSheet> {
               width: double.infinity,
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: AppTheme.fundo,
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const Text(
+              child: Text(
                 'Nenhum aluno se inscreveu ainda.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppTheme.textoSecundario),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             )
           else
@@ -1123,14 +1184,18 @@ class _GerenciarHorarioSheetState extends State<_GerenciarHorarioSheet> {
                     if (i > 0) const Divider(height: 1, indent: 66),
                     ListTile(
                       leading: CircleAvatar(
-                        backgroundColor: AppTheme.primariaSuave,
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .primaryContainer,
                         child: Text(
                           (participantes[i]['aluno_nome'] as String)
                               .characters
                               .first
                               .toUpperCase(),
-                          style: const TextStyle(
-                            color: AppTheme.primaria,
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onPrimaryContainer,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -1146,9 +1211,9 @@ class _GerenciarHorarioSheetState extends State<_GerenciarHorarioSheet> {
                             : 'Inscrito',
                         style: TextStyle(
                           color: participantes[i]['status'] == 'CHECK_IN'
-                              ? AppTheme.sucesso
-                              : AppTheme.textoSecundario,
-                          fontSize: 12,
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -1174,8 +1239,11 @@ class _GerenciarHorarioSheetState extends State<_GerenciarHorarioSheet> {
                   icon: const Icon(Icons.delete_outline),
                   label: const Text('Excluir'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFC53232),
-                    side: const BorderSide(color: Color(0xFFF0B8B5)),
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.error
+                          .withValues(alpha: .4),
+                    ),
                   ),
                 ),
               ),
@@ -1272,15 +1340,15 @@ class _GerenciarHorarioSheetState extends State<_GerenciarHorarioSheet> {
   Widget _contador(String valor) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
     decoration: BoxDecoration(
-      color: AppTheme.primariaSuave,
+      color: Theme.of(context).colorScheme.primaryContainer,
       borderRadius: BorderRadius.circular(16),
     ),
     child: Text(
       valor,
-      style: const TextStyle(
-        color: AppTheme.primaria,
+      style: TextStyle(
+        color: Theme.of(context).colorScheme.onPrimaryContainer,
         fontWeight: FontWeight.bold,
-        fontSize: 12,
+        fontSize: 14,
       ),
     ),
   );

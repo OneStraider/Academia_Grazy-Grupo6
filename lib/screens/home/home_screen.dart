@@ -5,9 +5,9 @@ import '../../models/treino.dart';
 import '../../models/usuario.dart';
 import '../../services/agendamento_service.dart';
 import '../../services/avaliacao_service.dart';
+import '../../services/database_events.dart';
 import '../../services/treino_services.dart';
 import '../../services/usuario_service.dart';
-import '../../theme/app_theme.dart';
 import '../agendamentos/agendamentos_screen.dart';
 import '../evolucao/avaliacao_screen.dart';
 import '../evolucao/evolucao_screen.dart';
@@ -15,6 +15,7 @@ import '../exercicios/exercicios_screen.dart';
 import '../treinos/detalhes_treino_screen.dart';
 import '../treinos/novo_treino_screen.dart';
 import '../treinos/treinos_screen.dart';
+import '../notificacoes/notificacoes_screen.dart';
 
 class _AlunoResumo {
   final Usuario aluno;
@@ -57,7 +58,18 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    DatabaseEvents.revision.addListener(_onDatabaseChanged);
     _dados = _carregar();
+  }
+
+  @override
+  void dispose() {
+    DatabaseEvents.revision.removeListener(_onDatabaseChanged);
+    super.dispose();
+  }
+
+  void _onDatabaseChanged() {
+    if (mounted) setState(() => _dados = _carregar());
   }
 
   Future<_HomeDados> _carregar() async {
@@ -71,8 +83,18 @@ class _HomeScreenState extends State<HomeScreen> {
       final treinos = await _treinos.listar();
       final resumos = <_AlunoResumo>[];
       for (final aluno in pessoas) {
-        final doAluno = treinos.where((t) => t.alunoId == aluno.id).toList()
-          ..sort((a, b) => b.validade.compareTo(a.validade));
+        final hoje = DateUtils.dateOnly(DateTime.now());
+        final doAluno =
+            treinos
+                .where(
+                  (t) =>
+                      t.alunoId == aluno.id &&
+                      t.concluidoEm == null &&
+                      t.status == 'ATIVO' &&
+                      !DateUtils.dateOnly(t.validade).isBefore(hoje),
+                )
+                .toList()
+              ..sort((a, b) => (b.id ?? 0).compareTo(a.id ?? 0));
         resumos.add(
           _AlunoResumo(aluno, doAluno.isEmpty ? null : doAluno.first),
         );
@@ -86,6 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
         .where(
           (t) =>
               t.status == 'ATIVO' &&
+              t.concluidoEm == null &&
               !DateUtils.dateOnly(t.validade).isBefore(hoje),
         )
         .firstOrNull;
@@ -206,13 +229,15 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
+      const NotificacoesIcone(),
+      const SizedBox(width: 2),
       CircleAvatar(
         radius: 32,
-        backgroundColor: AppTheme.primariaSuave,
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
         child: Text(
           nome.isEmpty ? '?' : nome[0].toUpperCase(),
-          style: const TextStyle(
-            color: AppTheme.primaria,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
             fontSize: 25,
             fontWeight: FontWeight.bold,
           ),
@@ -244,9 +269,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ]
         : [
             _atalho(
-              'Exercícios',
-              Icons.tune,
-              () => _navegar(const ExerciciosScreen()),
+              'Treinos',
+              Icons.fitness_center,
+              () => _navegar(const TreinosScreen()),
             ),
             const SizedBox(width: 9),
             _atalho(
@@ -263,46 +288,55 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
   );
 
-  Widget _atalho(String label, IconData icone, VoidCallback acao) => Expanded(
-    child: InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: acao,
-      child: Container(
-        height: 92,
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppTheme.borda),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: AppTheme.primariaSuave,
-                borderRadius: BorderRadius.circular(12),
+  Widget _atalho(String label, IconData icone, VoidCallback acao) {
+    final esquema = Theme.of(context).colorScheme;
+    final cor = switch (label) {
+      'Exercícios' || 'Agenda' => esquema.secondary,
+      'Treinos' => esquema.primary,
+      'Evolução' || 'Nova avaliação' => esquema.tertiary,
+      _ => esquema.primary,
+    };
+
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: acao,
+        child: Container(
+          height: 92,
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 8),
+          decoration: BoxDecoration(
+            color: cor.withValues(alpha: .055),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: cor.withValues(alpha: .25)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: cor.withValues(alpha: .15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icone, size: 21, color: cor),
               ),
-              child: Icon(icone, size: 21, color: AppTheme.primaria),
-            ),
-            const SizedBox(height: 6),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: AppTheme.texto,
-                  fontWeight: FontWeight.w600,
+              const SizedBox(height: 6),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _tituloSecao(String titulo, {String? acao, VoidCallback? aoClicar}) =>
       Row(
@@ -314,8 +348,8 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: aoClicar,
               child: Text(
                 acao,
-                style: const TextStyle(
-                  color: AppTheme.primaria,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -376,6 +410,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _cartaoProximaAula(Map<String, Object?>? aula) {
     if (aula == null) return _vazio('Você ainda não tem um agendamento.');
+    final esquema = Theme.of(context).colorScheme;
     final inicio = DateTime.parse(aula['inicio'] as String);
     final vagas = (aula['capacidade'] as int) - (aula['ocupadas'] as int);
     final agendamentoId = aula['agendamento_id'] as int;
@@ -389,7 +424,7 @@ class _HomeScreenState extends State<HomeScreen> {
               width: 56,
               height: 68,
               decoration: BoxDecoration(
-                color: AppTheme.primariaSuave,
+                color: esquema.primaryContainer,
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Column(
@@ -397,17 +432,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     '${inicio.day}',
-                    style: const TextStyle(
-                      color: AppTheme.primaria,
+                    style: TextStyle(
+                      color: esquema.onPrimaryContainer,
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   Text(
                     _mesAbrev(inicio.month).toUpperCase(),
-                    style: const TextStyle(
-                      color: AppTheme.primaria,
-                      fontSize: 11,
+                    style: TextStyle(
+                      color: esquema.onPrimaryContainer,
+                      fontSize: 13,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -434,9 +469,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ? 'Check-in realizado'
                         : '$vagas vagas disponíveis',
                     style: TextStyle(
-                      color: status == 'CHECK_IN'
-                          ? AppTheme.sucesso
-                          : AppTheme.sucesso,
+                      color: esquema.primary,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -448,7 +481,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ? null
                   : () async {
                       try {
-                        await AgendamentoService().checkin(agendamentoId);
+                        await AgendamentoService().checkin(
+                          agendamentoId,
+                          alunoId: _usuario!.id!,
+                        );
                         await _atualizar();
                       } catch (e) {
                         if (mounted)
@@ -457,8 +493,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       }
                     },
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppTheme.primaria),
-                foregroundColor: AppTheme.primaria,
+                side: BorderSide(color: esquema.outline),
+                foregroundColor: esquema.primary,
               ),
               child: Text(status == 'CHECK_IN' ? 'Feito' : 'Check-in'),
             ),
@@ -494,7 +530,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     : '${deltaPeso <= 0 ? '▼' : '▲'} ${deltaPeso.abs().toStringAsFixed(1)} kg desde ${_data(anterior!.data)}',
               ),
             ),
-            Container(width: 1, height: 76, color: AppTheme.borda),
+            Container(
+              width: 1,
+              height: 76,
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
             const SizedBox(width: 16),
             Expanded(
               child: _medida(
@@ -522,11 +562,11 @@ class _HomeScreenState extends State<HomeScreen> {
             if (i > 0) const Divider(height: 1, indent: 72),
             ListTile(
               leading: CircleAvatar(
-                backgroundColor: AppTheme.primariaSuave,
+                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                 child: Text(
                   alunos[i].aluno.nome[0].toUpperCase(),
-                  style: const TextStyle(
-                    color: AppTheme.primaria,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -594,18 +634,18 @@ class _HomeScreenState extends State<HomeScreen> {
       const SizedBox(height: 4),
       Text(
         valor,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 28,
           fontWeight: FontWeight.bold,
-          color: AppTheme.texto,
+          color: Theme.of(context).colorScheme.onSurface,
         ),
       ),
       const SizedBox(height: 2),
       Text(
         variacao,
-        style: const TextStyle(
-          color: AppTheme.sucesso,
-          fontSize: 11,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.primary,
+          fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -616,24 +656,32 @@ class _HomeScreenState extends State<HomeScreen> {
     width: 56,
     height: 56,
     decoration: BoxDecoration(
-      color: AppTheme.primariaSuave,
+      color: Theme.of(context).colorScheme.primaryContainer,
       borderRadius: BorderRadius.circular(14),
     ),
-    child: Icon(icone, color: AppTheme.primaria, size: 27),
+    child: Icon(
+      icone,
+      color: Theme.of(context).colorScheme.onPrimaryContainer,
+      size: 27,
+    ),
   );
 
   Widget _pill(String texto, {bool sucesso = false}) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
     decoration: BoxDecoration(
-      color: sucesso ? const Color(0xFFE8F5EE) : const Color(0xFFF4F6FA),
+      color: sucesso
+          ? Theme.of(context).colorScheme.primaryContainer
+          : Theme.of(context).colorScheme.surfaceContainerHigh,
       borderRadius: BorderRadius.circular(10),
     ),
     child: Text(
       texto,
       style: TextStyle(
-        color: sucesso ? AppTheme.sucesso : AppTheme.textoSecundario,
+        color: sucesso
+            ? Theme.of(context).colorScheme.onPrimaryContainer
+            : Theme.of(context).colorScheme.onSurfaceVariant,
         fontWeight: FontWeight.w600,
-        fontSize: 12,
+        fontSize: 14,
       ),
     ),
   );
@@ -643,7 +691,10 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.all(18),
       child: Row(
         children: [
-          const Icon(Icons.info_outline, color: AppTheme.primaria),
+          Icon(
+            Icons.info_outline,
+            color: Theme.of(context).colorScheme.primary,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(texto, style: Theme.of(context).textTheme.bodyMedium),

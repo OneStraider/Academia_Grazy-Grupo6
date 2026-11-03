@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/exercicios.dart';
 import '../../services/exercicios_services.dart';
+import '../../services/database_events.dart';
 import '../../services/usuario_service.dart';
 import 'exercicio_form_screen.dart';
 
@@ -15,6 +16,8 @@ class _ExerciciosScreenState extends State<ExerciciosScreen> {
   final _service = ExercicioService();
   final _busca = TextEditingController();
   String? _grupo;
+  String _consultaAplicada = '';
+  bool _digitandoBusca = false;
   late Future<List<Exercicio>> _dados;
   bool get _podeEditar =>
       UsuarioService.usuarioLogado?.ehProfessor == true ||
@@ -23,14 +26,35 @@ class _ExerciciosScreenState extends State<ExerciciosScreen> {
   @override
   void initState() {
     super.initState();
+    DatabaseEvents.revision.addListener(_onDatabaseChanged);
     _dados = _service.listar();
   }
 
-  void _carregar() =>
-      setState(() => _dados = _service.pesquisar(_busca.text, grupo: _grupo));
+  void _onDatabaseChanged() {
+    if (mounted) _carregar();
+  }
+
+  void _carregar() => setState(() => _dados = _service.listar());
+
+  void _buscar() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _consultaAplicada = _busca.text.trim();
+      _digitandoBusca = false;
+    });
+  }
+
+  void _limparBusca() {
+    _busca.clear();
+    setState(() {
+      _consultaAplicada = '';
+      _digitandoBusca = false;
+    });
+  }
 
   @override
   void dispose() {
+    DatabaseEvents.revision.removeListener(_onDatabaseChanged);
     _busca.dispose();
     super.dispose();
   }
@@ -55,13 +79,34 @@ class _ExerciciosScreenState extends State<ExerciciosScreen> {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          TextField(
-            controller: _busca,
-            onChanged: (_) => _carregar(),
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              labelText: 'Buscar exercício',
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _busca,
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search),
+                    labelText: 'Buscar exercício',
+                    suffixIcon: _busca.text.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Limpar busca',
+                            onPressed: _limparBusca,
+                            icon: const Icon(Icons.close),
+                          ),
+                  ),
+                  onChanged: (_) => setState(() => _digitandoBusca = true),
+                  onSubmitted: (_) => _buscar(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed: _buscar,
+                icon: const Icon(Icons.search),
+                label: const Text('Buscar'),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<String?>(
@@ -82,10 +127,7 @@ class _ExerciciosScreenState extends State<ExerciciosScreen> {
               ])
                 DropdownMenuItem(value: grupo, child: Text(grupo)),
             ],
-            onChanged: (value) {
-              _grupo = value;
-              _carregar();
-            },
+            onChanged: (value) => setState(() => _grupo = value),
           ),
           Expanded(
             child: FutureBuilder<List<Exercicio>>(
@@ -95,14 +137,37 @@ class _ExerciciosScreenState extends State<ExerciciosScreen> {
                   return Center(child: Text('Erro: ${snapshot.error}'));
                 if (!snapshot.hasData)
                   return const Center(child: CircularProgressIndicator());
-                if (snapshot.data!.isEmpty)
-                  return const Center(
-                    child: Text('Nenhum exercício cadastrado.'),
+                final termo = _digitandoBusca
+                    ? _busca.text
+                    : _consultaAplicada;
+                final exercicios = _service.filtrar(
+                  snapshot.data!,
+                  termo,
+                  grupo: _grupo,
+                );
+                if (exercicios.isEmpty)
+                  return Center(
+                    child: Text(
+                      termo.isEmpty && _grupo == null
+                          ? 'Nenhum exercício cadastrado.'
+                          : 'Nenhum exercício encontrado para essa busca.',
+                    ),
                   );
                 return ListView(
+                  padding: const EdgeInsets.only(top: 10, bottom: 96),
                   children: [
-                    for (final exercicio in snapshot.data!)
-                      Card(
+                    if (termo.isNotEmpty || _grupo != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          '${exercicios.length} resultado(s)${termo.isNotEmpty ? ' para "$termo"' : ''}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    for (final exercicio in exercicios)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Card(
                         child: ListTile(
                           leading: const Icon(Icons.fitness_center),
                           title: Text(exercicio.nome),
@@ -137,6 +202,7 @@ class _ExerciciosScreenState extends State<ExerciciosScreen> {
                                     ),
                                   ],
                                 ),
+                        ),
                         ),
                       ),
                   ],

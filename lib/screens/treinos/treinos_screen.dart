@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/treino.dart';
+import '../../services/database_events.dart';
 import '../../services/treino_services.dart';
 import '../../services/usuario_service.dart';
 import '../../theme/app_theme.dart';
@@ -34,7 +35,12 @@ class _TreinosScreenState extends State<TreinosScreen> {
   @override
   void initState() {
     super.initState();
+    DatabaseEvents.revision.addListener(_onDatabaseChanged);
     _futuro = _carregar();
+  }
+
+  void _onDatabaseChanged() {
+    if (mounted) _recarregar();
   }
 
   // Professor vê todos os treinos. Aluno vê só os dele.
@@ -88,6 +94,7 @@ class _TreinosScreenState extends State<TreinosScreen> {
 
   @override
   void dispose() {
+    DatabaseEvents.revision.removeListener(_onDatabaseChanged);
     _busca.dispose();
     super.dispose();
   }
@@ -153,10 +160,16 @@ class _TreinosScreenState extends State<TreinosScreen> {
                     }).toList();
 
                     // Vencido: status diferente de ATIVO ou validade já passou.
+                    final concluidos = todos
+                        .where((t) => t.concluidoEm != null)
+                        .toList();
                     bool vencido(Treino t) =>
-                        t.status != 'ATIVO' || t.validade.isBefore(hoje);
+                        t.concluidoEm == null &&
+                        (t.status != 'ATIVO' || t.validade.isBefore(hoje));
 
-                    final ativos = todos.where((t) => !vencido(t)).toList();
+                    final ativos = todos
+                        .where((t) => !vencido(t) && t.concluidoEm == null)
+                        .toList();
                     final vencidos = todos.where(vencido).toList();
 
                     if (todos.isEmpty) {
@@ -199,6 +212,23 @@ class _TreinosScreenState extends State<TreinosScreen> {
                                   'Aluno ${t.alunoId}',
                             ),
                         ],
+                        if (concluidos.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Concluídos · ${concluidos.length}',
+                            style: tema.titleMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          for (final t in concluidos)
+                            _card(
+                              t,
+                              false,
+                              dados.contagem[t.id] ?? 0,
+                              dados.nomesAlunos[t.alunoId] ??
+                                  'Aluno ${t.alunoId}',
+                              concluido: true,
+                            ),
+                        ],
                       ],
                     );
                   },
@@ -211,7 +241,14 @@ class _TreinosScreenState extends State<TreinosScreen> {
     );
   }
 
-  Widget _card(Treino t, bool vencido, int quantidade, String aluno) {
+  Widget _card(
+    Treino t,
+    bool vencido,
+    int quantidade,
+    String aluno, {
+    bool concluido = false,
+  }) {
+    final esquema = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Card(
@@ -223,15 +260,15 @@ class _TreinosScreenState extends State<TreinosScreen> {
             child: Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: vencido
-                      ? AppTheme.borda
-                      : AppTheme.primariaSuave,
+                  backgroundColor: concluido || !vencido
+                      ? esquema.primaryContainer
+                      : esquema.surfaceContainerHighest,
                   child: Text(
                     aluno[0],
                     style: TextStyle(
-                      color: vencido
-                          ? AppTheme.textoSecundario
-                          : AppTheme.primaria,
+                      color: vencido && !concluido
+                          ? esquema.onSurfaceVariant
+                          : esquema.onPrimaryContainer,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -252,11 +289,17 @@ class _TreinosScreenState extends State<TreinosScreen> {
                         runSpacing: 6,
                         children: [
                           _chip(
-                            vencido ? 'Vencido' : 'Ativo',
-                            destaque: !vencido,
+                            concluido
+                                ? 'Concluído'
+                                : vencido
+                                ? 'Vencido'
+                                : 'Ativo',
+                            destaque: concluido || !vencido,
                           ),
                           _chip(
-                            vencido
+                            concluido
+                                ? 'Concluído em ${_data(t.concluidoEm!)}'
+                                : vencido
                                 ? 'Venceu em ${_data(t.validade)}'
                                 : 'Até ${_data(t.validade)}',
                           ),
@@ -282,15 +325,23 @@ class _TreinosScreenState extends State<TreinosScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: destaque ? const Color(0xFFE3F4EB) : AppTheme.fundo,
+        color: destaque
+            ? (Theme.of(context).brightness == Brightness.dark
+                  ? const Color(0xFF204536)
+                  : AppTheme.sucessoSuave)
+            : Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         texto,
         style: TextStyle(
-          fontSize: 12,
+          fontSize: 14,
           fontWeight: FontWeight.w600,
-          color: destaque ? AppTheme.sucesso : AppTheme.textoSecundario,
+          color: destaque
+              ? (Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF9FE3C1)
+                    : AppTheme.sucesso)
+              : Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ),
     );

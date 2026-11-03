@@ -5,6 +5,8 @@ class Usuario {
   String email;
   String senhaHash;
   String tipo;
+  bool ativo;
+  DateTime? criadoEm;
 
   Usuario({
     this.id,
@@ -12,6 +14,8 @@ class Usuario {
     required this.email,
     required this.senhaHash,
     required this.tipo,
+    this.ativo = true,
+    this.criadoEm,
   });
 
   bool get ehAluno => tipo.toUpperCase() == 'ALUNO';
@@ -27,6 +31,8 @@ class Usuario {
       'email': email,
       'senha_hash': senhaHash,
       'tipo': tipo,
+      'ativo': ativo ? 1 : 0,
+      'criado_em': criadoEm?.toIso8601String(),
     };
   }
 
@@ -37,6 +43,10 @@ class Usuario {
       email: map['email'] as String,
       senhaHash: map['senha_hash'] as String,
       tipo: map['tipo'] as String,
+      ativo: (map['ativo'] as num?)?.toInt() != 0,
+      criadoEm: map['criado_em'] == null
+          ? null
+          : DateTime.tryParse(map['criado_em'] as String),
     );
   }
 }

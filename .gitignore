@@ -97,3 +97,7 @@ GoogleService-Info.plist
 *.log
 *.tmp
 tmp/
+
+# Backend de autenticação local: não versionar contas, códigos ou bytecode.
+backend/*.sqlite3
+backend/__pycache__/

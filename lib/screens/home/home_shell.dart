@@ -7,6 +7,9 @@ import '../home/home_screen.dart';
 import '../perfil/perfil_screen.dart';
 import '../treinos/treinos_screen.dart';
 import '../../services/usuario_service.dart';
+import '../../services/database_events.dart';
+import '../../services/admin_service.dart';
+import '../admin/admin_prototype_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -14,12 +17,56 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int index = 0;
+  late final PageController _pageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      DatabaseEvents.changed();
+    }
+  }
+
+  void _selecionarAba(int novoIndice) {
+    if (novoIndice == index) {
+      DatabaseEvents.changed();
+      return;
+    }
+    _pageController.animateToPage(
+      novoIndice,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
+  void _paginaAlterada(int novoIndice) {
+    if (novoIndice == index) return;
+    setState(() => index = novoIndice);
+  }
+
   bool get professor =>
       UsuarioService.usuarioLogado?.ehProfessor == true ||
       UsuarioService.usuarioLogado?.ehAdmin == true;
-  List<Widget> get pages => professor
+  bool get administrador =>
+      AdminPermissoes.podeAcessar(UsuarioService.usuarioLogado);
+  List<Widget> get pages => administrador
+      ? const [AdminPrototypeScreen()]
+      : professor
       ? const [
           HomeScreen(),
           ExerciciosScreen(),
@@ -34,7 +81,27 @@ class _HomeShellState extends State<HomeShell> {
           EvolucaoScreen(),
           PerfilScreen(),
         ];
-  List<NavigationDestination> get destinations => professor
+  List<NavigationDestination> get destinations => administrador
+      ? const [
+          NavigationDestination(
+            icon: Icon(Icons.space_dashboard_outlined),
+            label: 'Painel',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.groups_outlined),
+            label: 'Pessoas',
+          ),
+          NavigationDestination(icon: Icon(Icons.list_alt), label: 'Treinos'),
+          NavigationDestination(
+            icon: Icon(Icons.calendar_month),
+            label: 'Agenda',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            label: 'Perfil',
+          ),
+        ]
+      : professor
       ? const [
           NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
           NavigationDestination(
@@ -68,12 +135,20 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ];
   @override
-  Widget build(BuildContext context) => Scaffold(
-    body: pages[index],
-    bottomNavigationBar: NavigationBar(
-      selectedIndex: index,
-      onDestinationSelected: (v) => setState(() => index = v),
-      destinations: destinations,
-    ),
-  );
+  Widget build(BuildContext context) {
+    if (administrador) return const AdminPrototypeScreen();
+    return Scaffold(
+      body: PageView(
+        controller: _pageController,
+        onPageChanged: _paginaAlterada,
+        physics: const PageScrollPhysics(),
+        children: pages,
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: index,
+        onDestinationSelected: _selecionarAba,
+        destinations: destinations,
+      ),
+    );
+  }
 }

@@ -4,6 +4,8 @@ import '../database/database_helper.dart';
 import '../models/exercicios.dart';
 import '../models/treino.dart';
 import '../models/treino_exercicios.dart';
+import 'database_events.dart';
+import 'notificacao_service.dart';
 
 class TreinoService {
   final DatabaseHelper databaseHelper;
@@ -16,24 +18,48 @@ class TreinoService {
   Future<int> cadastrar(Treino treino, List<TreinoExercicio> itens) async {
     final db = await databaseHelper.database;
 
-    return await db.transaction((txn) async {
+    final treinoId = await db.transaction((txn) async {
       await txn.update(
         'treino',
         {'status': 'INATIVO'},
         where: "aluno_id = ? AND status = 'ATIVO'",
         whereArgs: [treino.alunoId],
       );
-      final treinoId = await txn.insert('treino', treino.toMap());
+      final mapaTreino = treino.toMap()
+        ..['criado_em'] = DateTime.now().toIso8601String();
+      final id = await txn.insert('treino', mapaTreino);
 
       for (final item in itens) {
         final mapa = item.toMap();
         mapa.remove('id');
-        mapa['treino_id'] = treinoId;
+        mapa['treino_id'] = id;
         await txn.insert('treino_exercicio', mapa);
       }
 
-      return treinoId;
+      final professor = await txn.query(
+        'usuario',
+        columns: ['nome'],
+        where: 'id = ?',
+        whereArgs: [treino.professorId],
+        limit: 1,
+      );
+      final nomeProfessor = professor.isEmpty
+          ? 'Seu professor'
+          : professor.first['nome'] as String;
+      await NotificacaoService.inserir(
+        txn,
+        destinatarioId: treino.alunoId,
+        tipo: 'TREINO_ATRIBUIDO',
+        titulo: 'Novo treino atribuído',
+        mensagem: '$nomeProfessor atribuiu o treino “${treino.nome}” a você.',
+        treinoId: id,
+      );
+
+      return id;
     });
+
+    DatabaseEvents.changed();
+    return treinoId;
   }
 
   Future<List<Treino>> listar() async {
@@ -57,6 +83,17 @@ class TreinoService {
     );
 
     return resultado.map((map) => Treino.fromMap(map)).toList();
+  }
+
+  Future<Treino?> buscarPorId(int treinoId) async {
+    final db = await databaseHelper.database;
+    final rows = await db.query(
+      'treino',
+      where: 'id = ?',
+      whereArgs: [treinoId],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : Treino.fromMap(rows.first);
   }
 
   Future<void> _atualizarVencidos(Database db) async {
@@ -140,9 +177,24 @@ class TreinoService {
     final db = await databaseHelper.database;
 
     await db.transaction((txn) async {
+      final existentes = await txn.query(
+        'treino',
+        columns: ['concluido_em', 'criado_em'],
+        where: 'id = ?',
+        whereArgs: [treino.id],
+        limit: 1,
+      );
+      if (existentes.isEmpty) throw StateError('Treino não encontrado.');
+      if (existentes.first['concluido_em'] != null) {
+        throw StateError('Um treino concluído não pode ser alterado.');
+      }
+
+      final mapaTreino = treino.toMap()
+        ..['criado_em'] =
+            treino.criadoEm?.toIso8601String() ?? existentes.first['criado_em'];
       await txn.update(
         'treino',
-        treino.toMap(),
+        mapaTreino,
         where: 'id = ?',
         whereArgs: [treino.id],
       );
@@ -185,6 +237,7 @@ class TreinoService {
         }
       }
     });
+    DatabaseEvents.changed();
   }
 
   // Os exercícios, execuções e feedbacks do treino são apagados junto
@@ -192,6 +245,12 @@ class TreinoService {
   Future<int> excluir(int id) async {
     final db = await databaseHelper.database;
 
-    return await db.delete('treino', where: 'id = ?', whereArgs: [id]);
+    final excluidos = await db.delete(
+      'treino',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    if (excluidos > 0) DatabaseEvents.changed();
+    return excluidos;
   }
 }

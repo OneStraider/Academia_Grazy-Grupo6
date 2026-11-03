@@ -5,7 +5,6 @@ import '../../models/avaliacao_fisica.dart';
 import '../../models/usuario.dart';
 import '../../services/avaliacao_service.dart';
 import '../../services/usuario_service.dart';
-import '../../theme/app_theme.dart';
 
 class AvaliacaoScreen extends StatefulWidget {
   const AvaliacaoScreen({super.key});
@@ -118,14 +117,14 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: AppTheme.primariaSuave,
+                    color: Theme.of(context).colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.insights_outlined,
-                        color: AppTheme.primaria,
+                        color: Theme.of(context).colorScheme.primary,
                         size: 28,
                       ),
                       const SizedBox(width: 12),
@@ -135,16 +134,18 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
                           children: [
                             Text(
                               'IMC ${imc.toStringAsFixed(1)} · $classificacao',
-                              style: const TextStyle(
-                                color: AppTheme.texto,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurface,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
                             const SizedBox(height: 3),
                             Text(
                               'Massa magra estimada: ${massaMagra.toStringAsFixed(1)} kg',
-                              style: const TextStyle(
-                                color: AppTheme.textoSecundario,
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
                               ),
                             ),
                           ],
@@ -180,7 +181,7 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
         children: [
           Row(
             children: [
-              Icon(icone, color: AppTheme.primaria),
+              Icon(icone, color: Theme.of(context).colorScheme.primary),
               const SizedBox(width: 9),
               Text(titulo, style: Theme.of(context).textTheme.titleMedium),
             ],

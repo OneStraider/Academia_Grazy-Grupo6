@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../services/agendamento_service.dart';
+import '../../services/database_events.dart';
+import '../../services/usuario_service.dart';
 import '../../theme/app_theme.dart';
 
 class AgendamentoDetalhesScreen extends StatefulWidget {
@@ -18,7 +20,19 @@ class _AgendamentoDetalhesScreenState extends State<AgendamentoDetalhesScreen> {
   @override
   void initState() {
     super.initState();
+    DatabaseEvents.revision.addListener(_onDatabaseChanged);
     _aula = _service.buscarAgendamento(widget.agendamentoId);
+  }
+
+  @override
+  void dispose() {
+    DatabaseEvents.revision.removeListener(_onDatabaseChanged);
+    super.dispose();
+  }
+
+  void _onDatabaseChanged() {
+    if (mounted)
+      setState(() => _aula = _service.buscarAgendamento(widget.agendamentoId));
   }
 
   Future<void> _acao(Future<void> Function() executar, String sucesso) async {
@@ -146,7 +160,10 @@ class _AgendamentoDetalhesScreenState extends State<AgendamentoDetalhesScreen> {
               FilledButton.icon(
                 onPressed: checkinDisponivel
                     ? () => _acao(
-                        () => _service.checkin(widget.agendamentoId),
+                        () => _service.checkin(
+                          widget.agendamentoId,
+                          alunoId: UsuarioService.usuarioLogado!.id!,
+                        ),
                         'Check-in confirmado.',
                       )
                     : null,
@@ -161,7 +178,7 @@ class _AgendamentoDetalhesScreenState extends State<AgendamentoDetalhesScreen> {
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE8F5EE),
+                  color: AppTheme.sucessoSuave,
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: const Row(
@@ -181,7 +198,10 @@ class _AgendamentoDetalhesScreenState extends State<AgendamentoDetalhesScreen> {
             const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: () => _acao(
-                () => _service.cancelar(widget.agendamentoId),
+                () => _service.cancelar(
+                  widget.agendamentoId,
+                  alunoId: UsuarioService.usuarioLogado!.id!,
+                ),
                 'Agendamento cancelado.',
               ),
               icon: const Icon(Icons.event_busy_outlined),
@@ -209,7 +229,7 @@ class _AgendamentoDetalhesScreenState extends State<AgendamentoDetalhesScreen> {
       status == 'CHECK_IN' ? 'Check-in feito' : 'Confirmada',
       style: const TextStyle(
         color: Colors.white,
-        fontSize: 11,
+        fontSize: 13,
         fontWeight: FontWeight.bold,
       ),
     ),

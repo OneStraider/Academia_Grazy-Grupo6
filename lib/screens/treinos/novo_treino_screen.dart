@@ -8,11 +8,8 @@ import '../../services/exercicios_services.dart';
 import '../../services/treino_services.dart';
 import '../../services/usuario_service.dart';
 import '../../models/usuario.dart';
-import '../../theme/app_theme.dart';
 
-// Botão principal do modelo 2: FilledButton azul, cantos de 12,
-// altura 50 e texto em negrito. Quando o AppTheme tiver um
-// filledButtonTheme, este estilo pode sair daqui.
+// Preserva a altura mínima dos botões do formulário.
 ButtonStyle _estiloBotaoPrincipal(BuildContext context) {
   return FilledButton.styleFrom(
     minimumSize: const Size(double.infinity, 50),
@@ -363,12 +360,16 @@ class _NovoTreinoScreenState extends State<NovoTreinoScreen> {
                     ListTile(
                       leading: CircleAvatar(
                         radius: 14,
-                        backgroundColor: AppTheme.primariaSuave,
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .primaryContainer,
                         child: Text(
                           '${i + 1}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.primaria,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onPrimaryContainer,
                           ),
                         ),
                       ),

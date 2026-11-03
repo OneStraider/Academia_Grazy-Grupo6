@@ -1,6 +1,8 @@
 import 'package:sqflite/sqflite.dart';
 
 import '../database/database_helper.dart';
+import 'database_events.dart';
+import 'usuario_service.dart';
 
 class AgendamentoService {
   final DatabaseHelper databaseHelper;
@@ -26,13 +28,15 @@ class AgendamentoService {
       );
     }
     final db = await databaseHelper.database;
-    return db.insert('horario_aula', {
+    final id = await db.insert('horario_aula', {
       'professor_id': professorId,
       'nome_aula': nomeAula.trim(),
       'inicio': inicio.toIso8601String(),
       'capacidade': capacidade,
       'min_participantes': minParticipantes,
     });
+    DatabaseEvents.changed();
+    return id;
   }
 
   Future<void> editarHorario({
@@ -79,6 +83,7 @@ class AgendamentoService {
       whereArgs: [horarioId],
     );
     if (alteradas == 0) throw Exception('HorÃ¡rio nÃ£o encontrado.');
+    DatabaseEvents.changed();
   }
 
   Future<void> excluirHorario(int horarioId) async {
@@ -98,6 +103,7 @@ class AgendamentoService {
         whereArgs: [horarioId],
       );
     });
+    DatabaseEvents.changed();
   }
 
   Future<List<Map<String, Object?>>> listarParticipantes(int horarioId) async {
@@ -123,7 +129,7 @@ class AgendamentoService {
       (SELECT a.id FROM agendamento a WHERE a.horario_id=h.id AND a.aluno_id=? AND a.status IN ('AGENDADO','CHECK_IN') LIMIT 1) agendamento_id,
       (SELECT a.status FROM agendamento a WHERE a.horario_id=h.id AND a.aluno_id=? AND a.status IN ('AGENDADO','CHECK_IN') LIMIT 1) agendamento_status
       FROM horario_aula h JOIN usuario u ON u.id=h.professor_id
-      WHERE h.ativo=1 AND h.inicio>=? ORDER BY h.inicio''',
+      WHERE h.ativo=1 AND u.ativo=1 AND h.inicio>=? ORDER BY h.inicio''',
       [alunoId ?? -1, alunoId ?? -1, DateTime.now().toIso8601String()],
     );
     return rows;
@@ -155,6 +161,19 @@ class AgendamentoService {
         limit: 1,
       );
       if (horarios.isEmpty) throw Exception('HorÃ¡rio indisponÃ­vel.');
+      final alunos = await tx.query(
+        'usuario',
+        columns: ['ativo', 'tipo'],
+        where: 'id = ?',
+        whereArgs: [alunoId],
+        limit: 1,
+      );
+      if (alunos.isEmpty || alunos.first['tipo'] != 'ALUNO') {
+        throw Exception('Conta de aluno não encontrada.');
+      }
+      if (alunos.first['ativo'] != 1) {
+        throw Exception(UsuarioService.alunoInativoMensagem);
+      }
       final inicio = DateTime.parse(horarios.first['inicio'] as String);
       if (inicio.difference(DateTime.now()) < const Duration(hours: 1))
         throw Exception('Agende com pelo menos 1 hora de antecedÃªncia.');
@@ -185,42 +204,55 @@ class AgendamentoService {
         'criado_em': DateTime.now().toIso8601String(),
       });
     });
+    DatabaseEvents.changed();
   }
 
-  Future<void> cancelar(int agendamentoId) async {
+  Future<void> cancelar(int agendamentoId, {required int alunoId}) async {
     final db = await databaseHelper.database;
     final rows = await db.rawQuery(
-      'SELECT a.id,h.inicio FROM agendamento a JOIN horario_aula h ON h.id=a.horario_id WHERE a.id=?',
-      [agendamentoId],
+      '''
+      SELECT a.id, h.inicio FROM agendamento a
+      JOIN horario_aula h ON h.id = a.horario_id
+      WHERE a.id = ? AND a.aluno_id = ? AND a.status IN ('AGENDADO','CHECK_IN')
+      ''',
+      [agendamentoId, alunoId],
     );
     if (rows.isEmpty) throw Exception('Agendamento nÃ£o encontrado.');
     final inicio = DateTime.parse(rows.first['inicio'] as String);
     if (inicio.difference(DateTime.now()) < const Duration(hours: 2))
       throw Exception('Cancelamento disponÃ­vel atÃ© 2 horas antes da aula.');
-    await db.update(
+    final alteradas = await db.update(
       'agendamento',
       {'status': 'CANCELADO'},
-      where: 'id=?',
-      whereArgs: [agendamentoId],
+      where: 'id = ? AND aluno_id = ? AND status IN (?, ?)',
+      whereArgs: [agendamentoId, alunoId, 'AGENDADO', 'CHECK_IN'],
     );
+    if (alteradas == 0) throw Exception('Agendamento não encontrado.');
+    DatabaseEvents.changed();
   }
 
-  Future<void> checkin(int agendamentoId) async {
+  Future<void> checkin(int agendamentoId, {required int alunoId}) async {
     final db = await databaseHelper.database;
     final rows = await db.rawQuery(
-      'SELECT h.inicio FROM agendamento a JOIN horario_aula h ON h.id=a.horario_id WHERE a.id=? AND a.status="AGENDADO"',
-      [agendamentoId],
+      '''
+      SELECT h.inicio FROM agendamento a
+      JOIN horario_aula h ON h.id = a.horario_id
+      WHERE a.id = ? AND a.aluno_id = ? AND a.status = 'AGENDADO'
+      ''',
+      [agendamentoId, alunoId],
     );
     if (rows.isEmpty) throw Exception('Agendamento nÃ£o encontrado.');
     final delta = DateTime.parse(rows.first['inicio'] as String)
         .difference(DateTime.now());
     if (delta > const Duration(minutes: 30) || delta.isNegative)
       throw Exception('Check-in liberado nos 30 minutos anteriores Ã  aula.');
-    await db.update(
+    final alteradas = await db.update(
       'agendamento',
       {'status': 'CHECK_IN'},
-      where: 'id=?',
-      whereArgs: [agendamentoId],
+      where: 'id = ? AND aluno_id = ? AND status = ?',
+      whereArgs: [agendamentoId, alunoId, 'AGENDADO'],
     );
+    if (alteradas == 0) throw Exception('Agendamento não encontrado.');
+    DatabaseEvents.changed();
   }
 }
