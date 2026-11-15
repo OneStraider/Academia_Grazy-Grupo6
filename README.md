@@ -16,7 +16,7 @@ O banco local é inicializado com um administrador, dez professores, dez alunos,
 
 Os outros professores usam os e-mails `bruno`, `camila`, `diego`, `fernanda`, `gustavo`, `helena`, `igor` e `julia` em `@academiagrazy.com`. Os outros alunos são `joao`, `larissa`, `pedro`, `beatriz`, `lucas`, `sofia`, `matheus` e `isabela`, também em `@academiagrazy.com`. Todos usam a mesma senha de demonstração.
 
-Na primeira abertura com esta versão, uma migração adiciona as contas que faltam e grava, uma única vez, treinos com exercícios e execuções, avaliações físicas e aulas agendadas distribuídos por aproximadamente um mês. Os registros de avaliação e medidas corporais são fictícios para demonstração; não devem ser usados como orientação de saúde. A migração preserva os dados locais existentes e não repete a carga ao reiniciar o app.
+Na primeira abertura com esta versão, uma migração adiciona as contas que faltam e grava, uma única vez, treinos com exercícios e execuções, avaliações físicas e aulas agendadas distribuídos por aproximadamente um mês. Para manter a comparação do gráfico de treinos legível, os treinos de demonstração são atribuídos a três dos dez professores; todos os dez perfis continuam cadastrados. Os registros de avaliação e medidas corporais são fictícios para demonstração; não devem ser usados como orientação de saúde. A migração preserva os dados locais existentes e não repete a carga ao reiniciar o app.
 
 ## Regras de negócio
 

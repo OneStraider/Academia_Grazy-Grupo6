@@ -36,7 +36,7 @@ class DatabaseHelper {
       // 1 -> exercicio
       // 2 -> treino e treino_exercicio
       // 3 -> execucao_exercicio e feedback
-      version: 13,
+      version: 14,
 
       // Habilita as foreign keys do SQLite.
       onConfigure: (db) async {
@@ -154,6 +154,9 @@ class DatabaseHelper {
         }
         if (oldVersion < 13) {
           await _migrarDatasTreinosDemo(db);
+        }
+        if (oldVersion < 14) {
+          await _migrarAtribuicaoTreinosDemo(db);
         }
       },
     );
@@ -361,7 +364,9 @@ class DatabaseHelper {
 
     for (var i = 0; i < alunoIds.length; i++) {
       final alunoId = alunoIds[i];
-      final professorId = professorIds[i];
+      // Keep the sample comparison focused on three active instructors, as
+      // in the dashboard reference. All ten teacher accounts remain available.
+      final professorId = professorIds[i % 3];
       final dataCriacao = dataDemo(i);
       final concluido = i % 3 == 0;
       final treinoId = await db.insert('treino', {
@@ -554,6 +559,65 @@ class DatabaseHelper {
           );
         }
       }
+    }
+    await db.insert('preferencia_app', {'chave': marcador, 'valor': '1'});
+  }
+
+  /// Reassigns only seeded workouts to three sample teachers, keeping the
+  /// chart readable while leaving all ten teacher accounts untouched.
+  Future<void> _migrarAtribuicaoTreinosDemo(Database db) async {
+    const marcador = 'demo_training_teachers_v1';
+    final jaMigrado = await db.query(
+      'preferencia_app',
+      columns: ['chave'],
+      where: 'chave = ?',
+      whereArgs: [marcador],
+      limit: 1,
+    );
+    if (jaMigrado.isNotEmpty) return;
+
+    const alunos = [
+      'guilherme@academiagrazy.com',
+      'maria@academiagrazy.com',
+      'joao@academiagrazy.com',
+      'larissa@academiagrazy.com',
+      'pedro@academiagrazy.com',
+      'beatriz@academiagrazy.com',
+      'lucas@academiagrazy.com',
+      'sofia@academiagrazy.com',
+      'matheus@academiagrazy.com',
+      'isabela@academiagrazy.com',
+    ];
+    const professores = [
+      'professor@academiagrazy.com',
+      'ana@academiagrazy.com',
+      'bruno@academiagrazy.com',
+    ];
+    for (var i = 0; i < alunos.length; i++) {
+      final aluno = await db.query(
+        'usuario',
+        columns: ['id'],
+        where: 'email = ?',
+        whereArgs: [alunos[i]],
+        limit: 1,
+      );
+      final professor = await db.query(
+        'usuario',
+        columns: ['id'],
+        where: 'email = ?',
+        whereArgs: [professores[i % professores.length]],
+        limit: 1,
+      );
+      if (aluno.isEmpty || professor.isEmpty) continue;
+      await db.update(
+        'treino',
+        {'professor_id': professor.single['id']},
+        where: 'aluno_id = ? AND observacoes = ?',
+        whereArgs: [
+          aluno.single['id'],
+          'Treino de demonstração para apresentação local.',
+        ],
+      );
     }
     await db.insert('preferencia_app', {'chave': marcador, 'valor': '1'});
   }
