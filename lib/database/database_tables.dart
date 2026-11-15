@@ -51,7 +51,8 @@ class DatabaseTables {
     id INTEGER PRIMARY KEY AUTOINCREMENT, aluno_id INTEGER NOT NULL REFERENCES usuario(id),
     professor_id INTEGER NOT NULL REFERENCES usuario(id), data TEXT NOT NULL,
     peso REAL NOT NULL, altura REAL NOT NULL, percentual_gordura REAL,
-    massa_magra REAL NOT NULL, observacoes TEXT
+    massa_magra REAL NOT NULL, observacoes TEXT,
+    status TEXT NOT NULL DEFAULT 'CONCLUIDA'
   )''';
   static const String anamnese = '''CREATE TABLE anamnese (
     id INTEGER PRIMARY KEY AUTOINCREMENT, aluno_id INTEGER NOT NULL UNIQUE REFERENCES usuario(id),

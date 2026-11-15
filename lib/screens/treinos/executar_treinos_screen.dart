@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:io' show File;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/treino.dart';
@@ -504,6 +505,18 @@ class _ExecutarTreinoScreenState extends State<ExecutarTreinoScreen> {
     if (caminho.startsWith('http://') || caminho.startsWith('https://')) {
       return Image.network(caminho, fit: BoxFit.cover, errorBuilder: erro);
     }
+    if (caminho.startsWith('data:image/')) {
+      try {
+        return Image.memory(
+          UriData.parse(caminho).contentAsBytes(),
+          fit: BoxFit.cover,
+          errorBuilder: erro,
+        );
+      } catch (_) {
+        return erro(context, null, null);
+      }
+    }
+    if (kIsWeb) return erro(context, null, null);
     return Image.file(File(caminho), fit: BoxFit.cover, errorBuilder: erro);
   }
 

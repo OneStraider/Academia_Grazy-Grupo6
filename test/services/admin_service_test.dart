@@ -32,7 +32,14 @@ void main() {
     await db.execute('''CREATE TABLE avaliacao_fisica (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       aluno_id INTEGER NOT NULL,
-      data TEXT NOT NULL
+      professor_id INTEGER,
+      data TEXT NOT NULL,
+      peso REAL,
+      altura REAL,
+      massa_magra REAL,
+      percentual_gordura REAL,
+      observacoes TEXT,
+      status TEXT NOT NULL DEFAULT 'CONCLUIDA'
     )''');
   });
 
@@ -132,6 +139,84 @@ void main() {
     expect(resultado.treinosAnteriores, 1);
     expect(resultado.alunosAnteriores, 1);
     expect(resultado.avaliacoesAnteriores, 1);
+  });
+
+  test('gráficos usam contagens reais e total acumulado de alunos', () async {
+    UsuarioService.usuarioLogado = admin();
+    final professorId = await db.insert('usuario', {
+      'nome': 'Professora Ana',
+      'email': 'ana@teste.com',
+      'senha_hash': 'hash',
+      'tipo': 'PROFESSOR',
+      'criado_em': '2026-03-01T00:00:00.000',
+    });
+    final alunoId = await db.insert('usuario', {
+      'nome': 'Aluno real',
+      'email': 'aluno@teste.com',
+      'senha_hash': 'hash',
+      'tipo': 'ALUNO',
+      'criado_em': '2026-03-10T10:00:00.000',
+    });
+    await db.insert('treino', {
+      'aluno_id': alunoId,
+      'professor_id': professorId,
+      'criado_em': '2026-03-12T10:00:00.000',
+    });
+    final serviceAdmin = service();
+    final newStudents = await serviceAdmin.carregarSerie(
+      periodo: AdminGranularidade.mes,
+      referencia: DateTime(2026, 3, 20),
+      metrica: 'novos',
+    );
+    final totalStudents = await serviceAdmin.carregarSerie(
+      periodo: AdminGranularidade.mes,
+      referencia: DateTime(2026, 3, 20),
+      metrica: 'total',
+    );
+    final trainings = await serviceAdmin.carregarSerie(
+      periodo: AdminGranularidade.mes,
+      referencia: DateTime(2026, 3, 20),
+      metrica: 'treinos',
+      professorId: professorId,
+    );
+    expect(
+      newStudents.fold<int>(0, (sum, p) => sum + p.valores.values.first),
+      1,
+    );
+    expect(totalStudents.last.valores['Total de alunos'], 1);
+    expect(
+      trainings.fold<int>(0, (sum, p) => sum + p.valores['Professora Ana']!),
+      1,
+    );
+  });
+
+  test('admin filtra todos os perfis e atualiza ou remove avaliação', () async {
+    UsuarioService.usuarioLogado = admin();
+    final alunoId = await db.insert('usuario', {
+      'nome': 'Aluno',
+      'email': 'aluno@teste.com',
+      'senha_hash': 'hash',
+      'tipo': 'ALUNO',
+      'criado_em': '2026-03-01T00:00:00.000',
+    });
+    final professorId = await db.insert('usuario', {
+      'nome': 'Professora',
+      'email': 'prof@teste.com',
+      'senha_hash': 'hash',
+      'tipo': 'PROFESSOR',
+      'criado_em': '2026-03-01T00:00:00.000',
+    });
+    expect((await service().listarPessoas(tipo: 'TODOS')).length, 2);
+    final evaluationId = await db.insert('avaliacao_fisica', {
+      'aluno_id': alunoId,
+      'professor_id': professorId,
+      'data': '2026-03-10T10:00:00.000',
+      'status': 'ABERTA',
+    });
+    await service().definirStatusAvaliacao(evaluationId, 'CONCLUIDA');
+    expect((await db.query('avaliacao_fisica')).single['status'], 'CONCLUIDA');
+    await service().excluirAvaliacao(evaluationId);
+    expect(await db.query('avaliacao_fisica'), isEmpty);
   });
 
   test(

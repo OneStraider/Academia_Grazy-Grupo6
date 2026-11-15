@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../models/usuario.dart';
@@ -7,8 +9,11 @@ import '../../services/usuario_service.dart';
 import '../../theme/app_theme.dart';
 import 'admin_access_guard.dart';
 import '../perfil/perfil_screen.dart';
+import '../../widgets/modulo_page_view.dart';
 
-enum _Periodo { ano, mes, semana, dia }
+enum _Periodo { ano, mes, semana }
+
+enum _FiltroAvaliacao { todas, abertas, concluidas }
 
 class AdminPrototypeScreen extends StatefulWidget {
   const AdminPrototypeScreen({super.key});
@@ -18,21 +23,42 @@ class AdminPrototypeScreen extends StatefulWidget {
 }
 
 class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
+  static const _modulos = <(String, IconData)>[
+    ('Visão geral', Icons.space_dashboard_outlined),
+    ('Alunos e usuários', Icons.groups_outlined),
+    ('Equipe', Icons.fitness_center_outlined),
+    ('Avaliações', Icons.fact_check_outlined),
+  ];
+
   final _service = AdminService();
   final _busca = TextEditingController();
+  final _buscaEquipe = TextEditingController();
   int _pagina = 0;
+  String _tipoPessoa = 'TODOS';
+  late final PageController _pageController;
   _Periodo _periodo = _Periodo.mes;
   DateTime _referencia = DateTime.now();
+  int? _professorSelecionado;
+  _FiltroAvaliacao _filtroAvaliacao = _FiltroAvaliacao.todas;
+  final Map<String, bool> _graficoBarras = {
+    'treinos': false,
+    'novos': false,
+    'total': false,
+  };
   String _buscaAtual = '';
+  String _buscaEquipeAtual = '';
   late Future<AdminMetricas> _metricas;
   late Future<List<Usuario>> _pessoas;
+  late Future<List<Usuario>> _professores;
   late Future<List<AdminAvaliacaoResumo>> _avaliacoes;
+  late Future<List<AdminPontoSerie>> _serieTreinos;
+  late Future<List<AdminPontoSerie>> _serieNovos;
+  late Future<List<AdminPontoSerie>> _serieTotal;
 
   AdminGranularidade get _granularidade => switch (_periodo) {
     _Periodo.ano => AdminGranularidade.ano,
     _Periodo.mes => AdminGranularidade.mes,
     _Periodo.semana => AdminGranularidade.semana,
-    _Periodo.dia => AdminGranularidade.dia,
   };
 
   AdminPeriodo get _periodoAtual =>
@@ -41,6 +67,7 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
   @override
   void initState() {
     super.initState();
+    _pageController = PageController();
     DatabaseEvents.revision.addListener(_atualizar);
     _carregar();
   }
@@ -48,19 +75,89 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
   @override
   void dispose() {
     DatabaseEvents.revision.removeListener(_atualizar);
+    _pageController.dispose();
     _busca.dispose();
+    _buscaEquipe.dispose();
     super.dispose();
+  }
+
+  void _selecionarPagina(int pagina) {
+    if (pagina == _pagina) {
+      _atualizar();
+      return;
+    }
+    _busca.clear();
+    _buscaEquipe.clear();
+    _buscaAtual = '';
+    _buscaEquipeAtual = '';
+    _pageController.animateToPage(
+      pagina,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
+  void _paginaAlterada(int pagina) {
+    if (pagina == _pagina) return;
+    setState(() {
+      _pagina = pagina;
+      _busca.clear();
+      _buscaEquipe.clear();
+      _buscaAtual = '';
+      _buscaEquipeAtual = '';
+      if (pagina == 1 || pagina == 2) {
+        if (pagina == 1) {
+          _pessoas = _service.listarPessoas(tipo: _tipoPessoa);
+        } else {
+          _professores = _service.listarPessoas(tipo: 'PROFESSOR');
+        }
+      }
+    });
+  }
+
+  void _selecionarTipoPessoa(String tipo) {
+    if (tipo == _tipoPessoa) return;
+    setState(() {
+      _tipoPessoa = tipo;
+      _busca.clear();
+      _buscaAtual = '';
+      _pessoas = _service.listarPessoas(tipo: tipo);
+    });
   }
 
   void _carregar() {
     _metricas = _service.carregarMetricas(_periodoAtual);
     _pessoas = _service.listarPessoas(
-      tipo: _pagina == 2 ? 'PROFESSOR' : 'ALUNO',
+      tipo: _pagina == 2
+          ? 'PROFESSOR'
+          : _pagina == 1
+          ? _tipoPessoa
+          : 'ALUNO',
       busca: _buscaAtual,
+    );
+    _professores = _service.listarPessoas(
+      tipo: 'PROFESSOR',
+      busca: _buscaEquipeAtual,
     );
     _avaliacoes = _service.listarAvaliacoes(
       periodo: _periodoAtual,
       busca: _buscaAtual,
+    );
+    _serieTreinos = _service.carregarSerie(
+      periodo: _granularidade,
+      referencia: _referencia,
+      metrica: 'treinos',
+      professorId: _professorSelecionado,
+    );
+    _serieNovos = _service.carregarSerie(
+      periodo: _granularidade,
+      referencia: _referencia,
+      metrica: 'novos',
+    );
+    _serieTotal = _service.carregarSerie(
+      periodo: _granularidade,
+      referencia: _referencia,
+      metrica: 'total',
     );
   }
 
@@ -102,127 +199,224 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
       _Periodo.mes =>
         '${periodo.inicio.month.toString().padLeft(2, '0')}/${periodo.inicio.year}',
       _Periodo.semana => '${_data(periodo.inicio)} – ${_data(fim)}',
-      _Periodo.dia => _data(periodo.inicio),
     };
   }
 
   @override
   Widget build(BuildContext context) => AdminAccessGuard(
-    child: Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              [
-                'Visão geral',
-                'Alunos',
-                'Equipe',
-                'Avaliações',
-                'Perfil',
-              ][_pagina],
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final desktop = constraints.maxWidth >= 900;
+        return Scaffold(
+          body: SafeArea(
+            child: Row(
+              children: [
+                if (desktop) _navegacaoLateral(),
+                Expanded(
+                  child: Column(
+                    children: [
+                      _barraSuperior(),
+                      Expanded(
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1320),
+                            child: ModuloPageView(
+                              controller: _pageController,
+                              onPageChanged: _paginaAlterada,
+                              children: [
+                                KeyedSubtree(
+                                  key: const PageStorageKey('admin_dashboard'),
+                                  child: _dashboard(),
+                                ),
+                                KeyedSubtree(
+                                  key: const PageStorageKey('admin_usuarios'),
+                                  child: _listaPessoas(
+                                    alunos: _tipoPessoa != 'PROFESSOR',
+                                  ),
+                                ),
+                                KeyedSubtree(
+                                  key: const PageStorageKey('admin_equipe'),
+                                  child: _listaEquipe(),
+                                ),
+                                KeyedSubtree(
+                                  key: const PageStorageKey('admin_avaliacoes'),
+                                  child: _listaAvaliacoes(),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            Text(
-              'ACADEMIA GRAZY · ADMINISTRAÇÃO',
-              style: Theme.of(context).textTheme.labelSmall
-                  ?.copyWith(color: Colors.white70, letterSpacing: .7),
+          ),
+          floatingActionButton: _pagina == 1
+              ? FloatingActionButton.extended(
+                  onPressed: () =>
+                      _editarPessoa(null, aluno: _tipoPessoa != 'PROFESSOR'),
+                  icon: const Icon(Icons.person_add_alt_1),
+                  label: Text(
+                    _tipoPessoa == 'PROFESSOR'
+                        ? 'Novo professor'
+                        : 'Novo aluno',
+                  ),
+                )
+              : null,
+          bottomNavigationBar: desktop ? null : _navegacaoInferior(),
+        );
+      },
+    ),
+  );
+
+  Widget _navegacaoLateral() => Container(
+    width: 232,
+    color: AppTheme.primaria,
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(10, 4, 10, 22),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Academia Grazy',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              SizedBox(height: 2),
+              Text(
+                'ADMINISTRAÇÃO',
+                style: TextStyle(
+                  color: Color(0xFFBFD8CF),
+                  fontSize: 12,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+        for (var i = 0; i < _modulos.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: ListTile(
+              selected: i == _pagina,
+              selectedTileColor: Colors.white.withValues(alpha: .15),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              leading: Icon(_modulos[i].$2, color: Colors.white),
+              title: Text(
+                _modulos[i].$1,
+                style: const TextStyle(color: Colors.white),
+              ),
+              onTap: () => _selecionarPagina(i),
+            ),
+          ),
+        const Spacer(),
+        ListTile(
+          leading: const Icon(
+            Icons.account_circle_outlined,
+            color: Colors.white,
+          ),
+          title: const Text(
+            'Meu perfil',
+            style: TextStyle(color: Colors.white),
+          ),
+          onTap: _abrirPerfil,
+        ),
+      ],
+    ),
+  );
+
+  Widget _barraSuperior() => Material(
+    color: Theme.of(context).colorScheme.surface,
+    child: SizedBox(
+      height: 64,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        child: Row(
+          children: [
+            if (MediaQuery.sizeOf(context).width < 900)
+              Expanded(
+                child: Text(
+                  _modulos[_pagina].$1,
+                  style: Theme.of(context).textTheme.titleLarge,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              )
+            else
+              Expanded(
+                child: Text(
+                  'Painel de controle',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+            IconButton(
+              tooltip: 'Atualizar dados',
+              onPressed: _atualizar,
+              icon: const Icon(Icons.refresh),
+            ),
+            IconButton(
+              tooltip: 'Meu perfil',
+              onPressed: _abrirPerfil,
+              icon: const Icon(Icons.account_circle_outlined),
             ),
           ],
         ),
-        actions: [
-          if (_pagina != 4)
-            IconButton(
-              tooltip: 'Meu perfil',
-              onPressed: () => setState(() => _pagina = 4),
-              icon: const Icon(Icons.account_circle_outlined),
-            ),
-          IconButton(
-            tooltip: 'Atualizar dados',
-            onPressed: _atualizar,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
-      body: switch (_pagina) {
-        0 => _dashboard(),
-        1 => _listaPessoas(alunos: true),
-        2 => _listaPessoas(alunos: false),
-        3 => _listaAvaliacoes(),
-        _ => const PerfilScreen(),
-      },
-      floatingActionButton: _pagina == 1 || _pagina == 2
-          ? FloatingActionButton.extended(
-              onPressed: () => _editarPessoa(null, aluno: _pagina == 1),
-              icon: const Icon(Icons.person_add_alt_1),
-              label: Text(_pagina == 1 ? 'Novo aluno' : 'Novo professor'),
-            )
-          : null,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _pagina,
-        onDestinationSelected: (index) => setState(() {
-          _pagina = index;
-          _busca.clear();
-          _buscaAtual = '';
-          _carregar();
-        }),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.space_dashboard_outlined),
-            selectedIcon: Icon(Icons.space_dashboard),
-            label: 'Visão geral',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.groups_outlined),
-            selectedIcon: Icon(Icons.groups),
-            label: 'Alunos',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.fitness_center_outlined),
-            selectedIcon: Icon(Icons.fitness_center),
-            label: 'Equipe',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.fact_check_outlined),
-            selectedIcon: Icon(Icons.fact_check),
-            label: 'Avaliações',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Perfil',
-          ),
-        ],
       ),
     ),
   );
 
+  Widget _navegacaoInferior() => NavigationBar(
+    selectedIndex: _pagina,
+    onDestinationSelected: _selecionarPagina,
+    labelBehavior: MediaQuery.sizeOf(context).width < 360
+        ? NavigationDestinationLabelBehavior.onlyShowSelected
+        : NavigationDestinationLabelBehavior.alwaysShow,
+    destinations: [
+      for (final modulo in _modulos)
+        NavigationDestination(
+          icon: Icon(modulo.$2),
+          selectedIcon: Icon(modulo.$2),
+          label: modulo.$1,
+        ),
+    ],
+  );
+
+  void _abrirPerfil() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: Text('Meu perfil')),
+          body: const PerfilScreen(),
+        ),
+      ),
+    );
+  }
+
   Widget _dashboard() => RefreshIndicator(
     onRefresh: () async => _atualizar(),
     child: ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+      padding: EdgeInsets.fromLTRB(
+        MediaQuery.sizeOf(context).width >= 900 ? 24 : 16,
+        16,
+        MediaQuery.sizeOf(context).width >= 900 ? 24 : 16,
+        28,
+      ),
       children: [
         _CabecalhoAdmin(
           nome: UsuarioService.usuarioLogado?.nome ?? 'Administração',
         ),
         const SizedBox(height: 16),
-        _Painel(
-          titulo: 'Período de análise',
-          subtitulo:
-              'Comparação calculada com o período imediatamente anterior',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _seletorPeriodo(),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: _escolherData,
-                icon: const Icon(Icons.calendar_month_outlined),
-                label: Text('${_rotuloPeriodo()}  ·  Alterar referência'),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
         FutureBuilder<AdminMetricas>(
           future: _metricas,
           builder: (context, snapshot) {
@@ -231,7 +425,12 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
             final dados = snapshot.data!;
             return LayoutBuilder(
               builder: (context, constraints) {
-                final largura = (constraints.maxWidth - 12) / 2;
+                final colunas = ((constraints.maxWidth + 12) / 202)
+                    .floor()
+                    .clamp(1, 3)
+                    .toInt();
+                final largura =
+                    (constraints.maxWidth - (colunas - 1) * 12) / colunas;
                 return Wrap(
                   spacing: 12,
                   runSpacing: 12,
@@ -259,7 +458,7 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
                     SizedBox(
                       width: largura,
                       child: _Indicador(
-                        titulo: 'Avaliações',
+                        titulo: 'Avaliações realizadas',
                         valor: '${dados.avaliacoes}',
                         anterior: dados.avaliacoesAnteriores,
                         icone: Icons.fact_check_outlined,
@@ -274,21 +473,62 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
         ),
         const SizedBox(height: 20),
         _Painel(
-          titulo: 'Atividade no período',
-          subtitulo: 'Treinos criados, comparados ao período anterior',
-          child: FutureBuilder<AdminMetricas>(
-            future: _metricas,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) return _erro(snapshot.error);
-              if (!snapshot.hasData) return const _Carregando();
-              return _ComparacaoTreinos(
-                atual: snapshot.data!.treinos,
-                anterior: snapshot.data!.treinosAnteriores,
-                corAtual: Theme.of(context).colorScheme.primary,
-                corAnterior: Theme.of(context).colorScheme.primaryContainer,
-              );
-            },
+          titulo: 'Período de análise',
+          subtitulo:
+              'Comparação calculada com o período imediatamente anterior',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _seletorPeriodo(),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _escolherData,
+                icon: const Icon(Icons.calendar_month_outlined),
+                label: Text('${_rotuloPeriodo()}  ·  Alterar referência'),
+              ),
+            ],
           ),
+        ),
+        const SizedBox(height: 16),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth >= 900 ? 2 : 1;
+            final width = (constraints.maxWidth - (columns - 1) * 16) / columns;
+            return Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              children: [
+                SizedBox(
+                  width: width,
+                  child: _cartaoSerie(
+                    titulo: 'Treinos por professor',
+                    metrica: 'treinos',
+                    future: _serieTreinos,
+                    cor: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                SizedBox(
+                  width: width,
+                  child: _cartaoSerie(
+                    titulo: 'Novos alunos',
+                    metrica: 'novos',
+                    future: _serieNovos,
+                    cor: Theme.of(context).colorScheme.tertiary,
+                  ),
+                ),
+                SizedBox(
+                  width: width,
+                  child: _cartaoSerie(
+                    titulo: 'Quantidade total de alunos',
+                    metrica: 'total',
+                    future: _serieTotal,
+                    cor: Theme.of(context).colorScheme.secondary,
+                    subtitulo: 'Total acumulado ao fim de cada intervalo; distinto dos novos cadastros.',
+                  ),
+                ),
+              ],
+            );
+          },
         ),
         const SizedBox(height: 16),
         _Painel(
@@ -300,7 +540,7 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
                 child: Text('Consulte os registros de avaliação física.'),
               ),
               TextButton.icon(
-                onPressed: () => setState(() => _pagina = 3),
+                onPressed: () => _selecionarPagina(3),
                 icon: const Icon(Icons.arrow_forward, size: 18),
                 label: const Text('Ver'),
               ),
@@ -311,15 +551,141 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
     ),
   );
 
+  Widget _cartaoSerie({
+    required String titulo,
+    required String metrica,
+    required Future<List<AdminPontoSerie>> future,
+    required Color cor,
+    String? subtitulo,
+  }) => _Painel(
+    titulo: titulo,
+    subtitulo: subtitulo ?? 'Período: ${_rotuloPeriodo()}',
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (metrica == 'treinos') ...[
+          FutureBuilder<List<Usuario>>(
+            future: _professores,
+            builder: (context, snapshot) => DropdownButtonFormField<int?>(
+              initialValue: snapshot.hasData ? _professorSelecionado : null,
+              decoration: const InputDecoration(
+                labelText: 'Professor',
+                isDense: true,
+              ),
+              items: [
+                const DropdownMenuItem<int?>(
+                  value: null,
+                  child: Text('Todos os professores'),
+                ),
+                for (final p in snapshot.data ?? const <Usuario>[])
+                  DropdownMenuItem<int?>(
+                    value: p.id,
+                    child: Text(p.nome, overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              onChanged: (id) => setState(() {
+                _professorSelecionado = id;
+                _serieTreinos = _service.carregarSerie(
+                  periodo: _granularidade,
+                  referencia: _referencia,
+                  metrica: 'treinos',
+                  professorId: id,
+                );
+              }),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        Align(
+          alignment: Alignment.centerRight,
+          child: SegmentedButton<bool>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(
+                value: false,
+                icon: Icon(Icons.show_chart),
+                label: Text('Linhas'),
+              ),
+              ButtonSegment(
+                value: true,
+                icon: Icon(Icons.bar_chart),
+                label: Text('Barras'),
+              ),
+            ],
+            selected: {_graficoBarras[metrica] ?? false},
+            onSelectionChanged: (v) =>
+                setState(() => _graficoBarras[metrica] = v.first),
+          ),
+        ),
+        const SizedBox(height: 10),
+        FutureBuilder<List<AdminPontoSerie>>(
+          future: future,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) return _erro(snapshot.error);
+            if (!snapshot.hasData) {
+              return const SizedBox(height: 190, child: _Carregando());
+            }
+            final data = snapshot.data!;
+            if (data.isEmpty) {
+              return const SizedBox(
+                height: 110,
+                child: Center(child: Text('Sem dados para este período.')),
+              );
+            }
+            final names = data.expand((p) => p.valores.keys).toSet().toList()
+              ..sort();
+            final colors = [
+              cor,
+              Theme.of(context).colorScheme.tertiary,
+              Theme.of(context).colorScheme.secondary,
+              Theme.of(context).colorScheme.error,
+              AppTheme.primariaSuave,
+            ];
+            return Column(
+              children: [
+                SizedBox(
+                  height: 190,
+                  child: CustomPaint(
+                    painter: _SerieChartPainter(
+                      data: data,
+                      series: names,
+                      colors: {
+                        for (var i = 0; i < names.length; i++)
+                          names[i]: colors[i % colors.length],
+                      },
+                      bars: _graficoBarras[metrica] ?? false,
+                      textDirection: Directionality.of(context),
+                    ),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 4,
+                  children: [
+                    for (var i = 0; i < names.length; i++)
+                      _LegendaSerie(
+                        label: names[i],
+                        color: colors[i % colors.length],
+                      ),
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    ),
+  );
+
   Widget _seletorPeriodo() => SingleChildScrollView(
     scrollDirection: Axis.horizontal,
     child: SegmentedButton<_Periodo>(
       showSelectedIcon: false,
       segments: const [
-        ButtonSegment(value: _Periodo.ano, label: Text('Ano')),
-        ButtonSegment(value: _Periodo.mes, label: Text('Mês')),
         ButtonSegment(value: _Periodo.semana, label: Text('Semana')),
-        ButtonSegment(value: _Periodo.dia, label: Text('Dia')),
+        ButtonSegment(value: _Periodo.mes, label: Text('Mês')),
+        ButtonSegment(value: _Periodo.ano, label: Text('Ano')),
       ],
       selected: {_periodo},
       onSelectionChanged: (valores) => _definirPeriodo(valores.first),
@@ -335,28 +701,46 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              alunos ? 'Cadastro de alunos' : 'Equipe de professores',
+              _pagina == 1
+                  ? 'Gestão de usuários'
+                  : (alunos ? 'Cadastro de alunos' : 'Equipe de professores'),
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: 4),
             Text(
-              alunos
-                  ? 'Consulte os dados e a situação de acesso.'
-                  : 'Gerencie quem está atuando na equipe.',
+              _pagina == 1
+                  ? 'Gerencie os cadastros e os acessos da academia.'
+                  : (alunos
+                        ? 'Consulte os dados e a situação de acesso.'
+                        : 'Gerencie quem está atuando na equipe.'),
               style: Theme.of(context).textTheme.bodyMedium,
             ),
+            if (_pagina == 1) ...[
+              const SizedBox(height: 14),
+              SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: 'TODOS', label: Text('Todos')),
+                  ButtonSegment(value: 'ALUNO', label: Text('Alunos')),
+                  ButtonSegment(value: 'PROFESSOR', label: Text('Professores')),
+                ],
+                selected: {_tipoPessoa},
+                onSelectionChanged: (valores) =>
+                    _selecionarTipoPessoa(valores.first),
+              ),
+            ],
             const SizedBox(height: 14),
             TextField(
               controller: _busca,
               onChanged: (valor) => setState(() {
                 _buscaAtual = valor;
                 _pessoas = _service.listarPessoas(
-                  tipo: alunos ? 'ALUNO' : 'PROFESSOR',
+                  tipo: _tipoPessoa,
                   busca: valor,
                 );
               }),
               decoration: InputDecoration(
-                hintText: alunos ? 'Buscar aluno' : 'Buscar professor',
+                hintText: 'Buscar por nome ou e-mail',
                 prefixIcon: const Icon(Icons.search),
                 isDense: true,
                 suffixIcon: _busca.text.isEmpty
@@ -367,7 +751,7 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
                           setState(() {
                             _buscaAtual = '';
                             _pessoas = _service.listarPessoas(
-                              tipo: alunos ? 'ALUNO' : 'PROFESSOR',
+                              tipo: _tipoPessoa,
                             );
                           });
                         },
@@ -401,9 +785,9 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
                 final pessoa = snapshot.data![index];
                 return _PessoaTile(
                   pessoa: pessoa,
-                  alunos: alunos,
+                  alunos: pessoa.ehAluno,
                   onTap: () => _detalhesPessoa(pessoa),
-                  onEditar: () => _editarPessoa(pessoa, aluno: alunos),
+                  onEditar: () => _editarPessoa(pessoa, aluno: pessoa.ehAluno),
                   onStatus: () => _alterarAtivo(pessoa),
                 );
               },
@@ -411,7 +795,7 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
           },
         ),
       ),
-      if (alunos)
+      if (_tipoPessoa == 'ALUNO')
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: _AvisoSecretaria(),
@@ -419,64 +803,255 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
     ],
   );
 
-  Widget _listaAvaliacoes() => ListView(
-    padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
+  Widget _listaEquipe() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(
-        'Avaliações físicas',
-        style: Theme.of(context).textTheme.headlineSmall,
-      ),
-      const SizedBox(height: 4),
-      Text(
-        'Registros reais de alunos e professores.',
-        style: Theme.of(context).textTheme.bodyMedium,
-      ),
-      const SizedBox(height: 18),
-      _seletorPeriodo(),
-      const SizedBox(height: 12),
-      OutlinedButton.icon(
-        onPressed: _escolherData,
-        icon: const Icon(Icons.calendar_month_outlined),
-        label: Text('Referência: ${_data(_referencia)}'),
-      ),
-      const SizedBox(height: 12),
-      TextField(
-        controller: _busca,
-        onChanged: (valor) => setState(() {
-          _buscaAtual = valor;
-          _avaliacoes = _service.listarAvaliacoes(
-            periodo: _periodoAtual,
-            busca: valor,
-          );
-        }),
-        decoration: const InputDecoration(
-          prefixIcon: Icon(Icons.search),
-          hintText: 'Buscar aluno ou professor',
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Equipe', style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 4),
+            Text(
+              'Professores e cadastros da equipe da academia.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _buscaEquipe,
+              onChanged: (valor) => setState(() {
+                _buscaEquipeAtual = valor;
+                _professores = _service.listarPessoas(
+                  tipo: 'PROFESSOR',
+                  busca: valor,
+                );
+              }),
+              decoration: InputDecoration(
+                hintText: 'Buscar professor',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _buscaEquipe.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Limpar busca',
+                        onPressed: () {
+                          _buscaEquipe.clear();
+                          setState(() {
+                            _buscaEquipeAtual = '';
+                            _professores = _service.listarPessoas(
+                              tipo: 'PROFESSOR',
+                            );
+                          });
+                        },
+                        icon: const Icon(Icons.close),
+                      ),
+              ),
+            ),
+          ],
         ),
       ),
-      const SizedBox(height: 16),
-      FutureBuilder<List<AdminAvaliacaoResumo>>(
-        future: _avaliacoes,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) return _erro(snapshot.error);
-          if (!snapshot.hasData) return const _Carregando();
-          if (snapshot.data!.isEmpty) {
-            return const Card(
-              child: Padding(
-                padding: EdgeInsets.all(20),
-                child: Text('Nenhuma avaliação encontrada neste período.'),
+      Expanded(
+        child: FutureBuilder<List<Usuario>>(
+          future: _professores,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) return _erro(snapshot.error);
+            if (!snapshot.hasData) return const _Carregando();
+            if (snapshot.data!.isEmpty) {
+              return const Center(child: Text('Nenhum professor encontrado.'));
+            }
+            return GridView.builder(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 420,
+                mainAxisExtent: 146,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 12,
               ),
+              itemCount: snapshot.data!.length,
+              itemBuilder: (context, index) {
+                final professor = snapshot.data![index];
+                return Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => _detalhesPessoa(professor),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 26,
+                            backgroundColor: professor.ativo
+                                ? AppTheme.primariaSuave
+                                : Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest,
+                            child: Text(
+                              professor.nome.isEmpty
+                                  ? '?'
+                                  : professor.nome[0].toUpperCase(),
+                              style: const TextStyle(
+                                color: AppTheme.primaria,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  professor.nome,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.titleLarge,
+                                ),
+                                Text(
+                                  professor.email,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                                const SizedBox(height: 8),
+                                _StatusPill(
+                                  status: professor.ativo
+                                      ? 'Na equipe'
+                                      : 'Fora da equipe',
+                                ),
+                              ],
+                            ),
+                          ),
+                          PopupMenuButton<String>(
+                            onSelected: (acao) {
+                              if (acao == 'editar') {
+                                _editarPessoa(professor, aluno: false);
+                              } else {
+                                _alterarAtivo(professor);
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(
+                                value: 'editar',
+                                child: Text('Editar dados'),
+                              ),
+                              PopupMenuItem(
+                                value: 'status',
+                                child: Text(
+                                  professor.ativo
+                                      ? 'Bloquear acesso'
+                                      : 'Reativar acesso',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
             );
-          }
-          return Column(
-            children: [
-              _ResumoAvaliacao(
-                rotulo: 'No período',
-                valor: '${snapshot.data!.length}',
+          },
+        ),
+      ),
+    ],
+  );
+
+  Widget _listaAvaliacoes() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Avaliações físicas',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Registros reais de alunos e professores.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            _seletorPeriodo(),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _escolherData,
+              icon: const Icon(Icons.calendar_month_outlined),
+              label: Text('Referência: ${_data(_referencia)}'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _busca,
+              onChanged: (value) => setState(() {
+                _buscaAtual = value;
+                _avaliacoes = _service.listarAvaliacoes(
+                  periodo: _periodoAtual,
+                  busca: value,
+                );
+              }),
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: 'Buscar aluno ou professor',
               ),
-              const SizedBox(height: 12),
-              for (final avaliacao in snapshot.data!)
-                Card(
+            ),
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SegmentedButton<_FiltroAvaliacao>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: _FiltroAvaliacao.todas,
+                    label: Text('Todas'),
+                  ),
+                  ButtonSegment(
+                    value: _FiltroAvaliacao.abertas,
+                    label: Text('Em aberto'),
+                  ),
+                  ButtonSegment(
+                    value: _FiltroAvaliacao.concluidas,
+                    label: Text('Concluídas'),
+                  ),
+                ],
+                selected: {_filtroAvaliacao},
+                onSelectionChanged: (value) =>
+                    setState(() => _filtroAvaliacao = value.first),
+              ),
+            ),
+          ],
+        ),
+      ),
+      Expanded(
+        child: FutureBuilder<List<AdminAvaliacaoResumo>>(
+          future: _avaliacoes,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) return _erro(snapshot.error);
+            if (!snapshot.hasData) return const _Carregando();
+            final filtradas = snapshot.data!
+                .where(
+                  (a) => switch (_filtroAvaliacao) {
+                    _FiltroAvaliacao.todas => true,
+                    _FiltroAvaliacao.abertas => a.status == 'ABERTA',
+                    _FiltroAvaliacao.concluidas => a.status == 'CONCLUIDA',
+                  },
+                )
+                .toList(growable: false);
+            if (filtradas.isEmpty) {
+              return const Center(
+                child: Text('Nenhuma avaliação encontrada para este filtro.'),
+              );
+            }
+            return ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              itemCount: filtradas.length,
+              itemBuilder: (context, index) {
+                final avaliacao = filtradas[index];
+                final aberta = avaliacao.status == 'ABERTA';
+                return Card(
                   child: ListTile(
                     onTap: () => _detalhesAvaliacao(avaliacao),
                     leading: CircleAvatar(
@@ -500,16 +1075,76 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
                     subtitle: Text(
                       '${avaliacao.professor} · ${_data(avaliacao.data)}',
                     ),
-                    trailing: const _StatusPill(status: 'Registrada'),
+                    trailing: PopupMenuButton<String>(
+                      tooltip: 'Ações da avaliação',
+                      onSelected: (value) async {
+                        if (value == 'status') {
+                          try {
+                            await _service.definirStatusAvaliacao(
+                              avaliacao.id,
+                              aberta ? 'CONCLUIDA' : 'ABERTA',
+                            );
+                          } catch (error) {
+                            _mensagem('$error');
+                          }
+                        } else if (value == 'excluir') {
+                          final confirma = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('Excluir avaliação?'),
+                              content: Text(
+                                'O registro de ${avaliacao.aluno} será removido permanentemente.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
+                                  child: const Text('Cancelar'),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('Excluir'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirma == true) {
+                            try {
+                              await _service.excluirAvaliacao(avaliacao.id);
+                            } catch (error) {
+                              _mensagem('$error');
+                            }
+                          }
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: 'status',
+                          child: Text(
+                            aberta ? 'Marcar concluída' : 'Reabrir avaliação',
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'excluir',
+                          child: Text('Excluir avaliação'),
+                        ),
+                      ],
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: _StatusPill(
+                          status: aberta ? 'Em aberto' : 'Concluída',
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-            ],
-          );
-        },
+                );
+              },
+            );
+          },
+        ),
       ),
     ],
   );
-
   Future<void> _editarPessoa(Usuario? pessoa, {required bool aluno}) async {
     final nome = TextEditingController(text: pessoa?.nome ?? '');
     final email = TextEditingController(text: pessoa?.email ?? '');
@@ -597,6 +1232,15 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
   }
 
   Future<void> _detalhesPessoa(Usuario pessoa) async {
+    if (pessoa.ehProfessor) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              _PerfilProfessorAdmin(professor: pessoa, service: _service),
+        ),
+      );
+      return;
+    }
     try {
       final dados = await _service.detalhes(pessoa.id!);
       if (!mounted) return;
@@ -655,7 +1299,7 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(ativoNovo ? 'Reativar cadastro?' : 'Desativar cadastro?'),
+        title: Text(ativoNovo ? 'Reativar acesso?' : 'Bloquear acesso?'),
         content: Text(
           ativoNovo
               ? 'A pessoa poderá voltar a acessar o aplicativo.'
@@ -670,7 +1314,7 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text(ativoNovo ? 'Reativar' : 'Desativar'),
+            child: Text(ativoNovo ? 'Reativar acesso' : 'Bloquear acesso'),
           ),
         ],
       ),
@@ -679,7 +1323,7 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
     try {
       await _service.definirAtivo(pessoa.id!, ativoNovo);
       if (mounted) {
-        _mensagem(ativoNovo ? 'Cadastro reativado.' : 'Cadastro desativado.');
+        _mensagem(ativoNovo ? 'Acesso reativado.' : 'Acesso bloqueado.');
       }
     } catch (erro) {
       _mensagem('$erro');
@@ -759,18 +1403,15 @@ class _CabecalhoAdmin extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final primeiroNome = nome.trim().split(RegExp(r'\s+')).first;
+    final desktop = MediaQuery.sizeOf(context).width >= 900;
     final hoje = DateTime.now();
     final dataHoje =
         '${hoje.day.toString().padLeft(2, '0')}/'
         '${hoje.month.toString().padLeft(2, '0')}/${hoje.year}';
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(desktop ? 24 : 18),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppTheme.primaria, Color(0xFF0B6D5A)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: AppTheme.primaria,
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
@@ -800,8 +1441,10 @@ class _CabecalhoAdmin extends StatelessWidget {
                   'Olá, $primeiroNome',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.headlineSmall
-                      ?.copyWith(color: Colors.white, fontSize: 27),
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: Colors.white,
+                    fontSize: desktop ? 34 : 28,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 const Text(
@@ -909,7 +1552,7 @@ class _Indicador extends StatelessWidget {
             Text(
               valor,
               style: Theme.of(context).textTheme.headlineMedium
-                  ?.copyWith(fontSize: 30),
+                  ?.copyWith(fontSize: 42),
             ),
             const SizedBox(height: 8),
             Container(
@@ -952,6 +1595,285 @@ class _Indicador extends StatelessWidget {
   }
 }
 
+class _PerfilProfessorAdmin extends StatelessWidget {
+  final Usuario professor;
+  final AdminService service;
+  const _PerfilProfessorAdmin({required this.professor, required this.service});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Perfil do professor')),
+    body: FutureBuilder<List<AdminTreinoResumo>>(
+      future: service.listarTreinosProfessor(professor.id!),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text(
+                'Não foi possível carregar os treinos: ${snapshot.error}',
+              ),
+            ),
+          );
+        }
+        if (!snapshot.hasData) return const _Carregando();
+        final treinos = snapshot.data!;
+        final andamento = treinos
+            .where((t) => t.status == 'ATIVO' && !t.concluido)
+            .toList(growable: false);
+        final concluidos = treinos
+            .where((t) => t.concluido)
+            .toList(growable: false);
+        return ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 30,
+                      child: Text(
+                        professor.nome.isEmpty
+                            ? '?'
+                            : professor.nome[0].toUpperCase(),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            professor.nome,
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                          Text(professor.email),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Professor · ${professor.ativo ? 'Acesso liberado' : 'Acesso bloqueado'}',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            _tituloListaTreinos(
+              context,
+              'Treinos em andamento',
+              andamento.length,
+            ),
+            if (andamento.isEmpty)
+              const _EstadoVazioAdmin(
+                texto: 'Este professor não tem treinos em andamento.',
+              ),
+            for (final treino in andamento)
+              _TreinoProfessorTile(treino: treino, status: 'Em andamento'),
+            const SizedBox(height: 16),
+            _tituloListaTreinos(
+              context,
+              'Treinos concluídos',
+              concluidos.length,
+            ),
+            if (concluidos.isEmpty)
+              const _EstadoVazioAdmin(
+                texto: 'Este professor ainda não tem treinos concluídos.',
+              ),
+            for (final treino in concluidos)
+              _TreinoProfessorTile(treino: treino, status: 'Concluído'),
+          ],
+        );
+      },
+    ),
+  );
+
+  Widget _tituloListaTreinos(BuildContext context, String titulo, int count) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          '$titulo ($count)',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+      );
+}
+
+class _TreinoProfessorTile extends StatelessWidget {
+  final AdminTreinoResumo treino;
+  final String status;
+  const _TreinoProfessorTile({required this.treino, required this.status});
+  @override
+  Widget build(BuildContext context) => Card(
+    child: ListTile(
+      leading: const Icon(Icons.fitness_center),
+      title: Text(treino.nome),
+      subtitle: Text(
+        'Aluno: ${treino.aluno} · Status: $status · Validade: ${treino.validade.day}/${treino.validade.month}/${treino.validade.year}',
+      ),
+    ),
+  );
+}
+
+class _EstadoVazioAdmin extends StatelessWidget {
+  final String texto;
+  const _EstadoVazioAdmin({required this.texto});
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(padding: const EdgeInsets.all(16), child: Text(texto)),
+  );
+}
+
+class _LegendaSerie extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _LegendaSerie({required this.label, required this.color});
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 9,
+        height: 9,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 5),
+      Text(label, style: Theme.of(context).textTheme.labelMedium),
+    ],
+  );
+}
+
+class _SerieChartPainter extends CustomPainter {
+  final List<AdminPontoSerie> data;
+  final List<String> series;
+  final Map<String, Color> colors;
+  final bool bars;
+  final TextDirection textDirection;
+  const _SerieChartPainter({
+    required this.data,
+    required this.series,
+    required this.colors,
+    required this.bars,
+    required this.textDirection,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const left = 32.0, right = 8.0, top = 10.0, bottom = 26.0;
+    final plot = Rect.fromLTRB(
+      left,
+      top,
+      size.width - right,
+      size.height - bottom,
+    );
+    final maxValue = data
+        .expand((p) => series.map((name) => p.valores[name] ?? 0))
+        .fold<int>(0, (a, b) => a > b ? a : b)
+        .clamp(1, 1 << 30);
+    final gridPaint = Paint()
+      ..color = const Color(0xFFDCE6DE)
+      ..strokeWidth = 1;
+    final labelStyle = TextStyle(color: const Color(0xFF62716B), fontSize: 10);
+    for (var i = 0; i <= 3; i++) {
+      final y = plot.bottom - plot.height * i / 3;
+      canvas.drawLine(Offset(plot.left, y), Offset(plot.right, y), gridPaint);
+      _drawText(
+        canvas,
+        '${(maxValue * i / 3).round()}',
+        Offset(0, y - 6),
+        labelStyle,
+        textDirection,
+      );
+    }
+    final count = data.length;
+    final step = plot.width / count;
+    if (bars) {
+      final groupWidth = step * .72;
+      final barWidth = groupWidth / series.length;
+      for (var i = 0; i < count; i++) {
+        for (var j = 0; j < series.length; j++) {
+          final value = data[i].valores[series[j]] ?? 0;
+          final height = plot.height * value / maxValue;
+          final rect = Rect.fromLTWH(
+            plot.left + step * i + (step - groupWidth) / 2 + barWidth * j,
+            plot.bottom - height,
+            math.max(1, barWidth - 2),
+            height,
+          );
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(rect, const Radius.circular(3)),
+            Paint()..color = colors[series[j]]!,
+          );
+        }
+      }
+    } else {
+      for (final name in series) {
+        final points = <Offset>[];
+        for (var i = 0; i < count; i++) {
+          final value = data[i].valores[name] ?? 0;
+          points.add(
+            Offset(
+              plot.left + step * (i + .5),
+              plot.bottom - plot.height * value / maxValue,
+            ),
+          );
+        }
+        final line = Paint()
+          ..color = colors[name]!
+          ..strokeWidth = 2.5
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round;
+        final path = Path();
+        for (var i = 0; i < points.length; i++) {
+          if (i == 0) {
+            path.moveTo(points[i].dx, points[i].dy);
+          } else {
+            path.lineTo(points[i].dx, points[i].dy);
+          }
+        }
+        canvas.drawPath(path, line);
+        for (final point in points) {
+          canvas.drawCircle(point, 3, Paint()..color = colors[name]!);
+        }
+      }
+    }
+    final labelStride = (count / 7).ceil().clamp(1, count);
+    for (var i = 0; i < count; i += labelStride) {
+      _drawText(
+        canvas,
+        data[i].rotulo,
+        Offset(plot.left + step * (i + .5) - 13, plot.bottom + 6),
+        labelStyle,
+        textDirection,
+      );
+    }
+  }
+
+  static void _drawText(
+    Canvas canvas,
+    String text,
+    Offset at,
+    TextStyle style,
+    TextDirection direction,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: direction,
+      maxLines: 1,
+    )..layout();
+    painter.paint(canvas, at);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SerieChartPainter old) =>
+      old.data != data ||
+      old.series != series ||
+      old.colors != colors ||
+      old.bars != bars;
+}
+
 class _Painel extends StatelessWidget {
   final String titulo, subtitulo;
   final Widget child;
@@ -963,7 +1885,9 @@ class _Painel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(
+        MediaQuery.sizeOf(context).width >= 900 ? 20 : 16,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -974,84 +1898,6 @@ class _Painel extends StatelessWidget {
           child,
         ],
       ),
-    ),
-  );
-}
-
-class _ComparacaoTreinos extends StatelessWidget {
-  final int atual, anterior;
-  final Color corAtual, corAnterior;
-  const _ComparacaoTreinos({
-    required this.atual,
-    required this.anterior,
-    required this.corAtual,
-    required this.corAnterior,
-  });
-  @override
-  Widget build(BuildContext context) {
-    final maior = (atual > anterior ? atual : anterior).clamp(1, 1 << 30);
-    return SizedBox(
-      height: 150,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _BarraComparativa(
-            rotulo: 'Anterior',
-            valor: anterior,
-            altura: anterior / maior,
-            cor: corAnterior,
-          ),
-          _BarraComparativa(
-            rotulo: 'Atual',
-            valor: atual,
-            altura: atual / maior,
-            cor: corAtual,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BarraComparativa extends StatelessWidget {
-  final String rotulo;
-  final int valor;
-  final double altura;
-  final Color cor;
-  const _BarraComparativa({
-    required this.rotulo,
-    required this.valor,
-    required this.altura,
-    required this.cor,
-  });
-
-  @override
-  Widget build(BuildContext context) => Expanded(
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        Text('$valor'),
-        const SizedBox(height: 6),
-        Expanded(
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: FractionallySizedBox(
-              heightFactor: altura,
-              widthFactor: .36,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: cor,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(6),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(rotulo, style: Theme.of(context).textTheme.bodySmall),
-      ],
     ),
   );
 }
@@ -1090,6 +1936,10 @@ class _PessoaTile extends StatelessWidget {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(
+            alunos ? 'Aluno' : 'Professor',
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
           Text(pessoa.email, maxLines: 1, overflow: TextOverflow.ellipsis),
           const SizedBox(height: 4),
           _StatusPill(
@@ -1107,7 +1957,7 @@ class _PessoaTile extends StatelessWidget {
           const PopupMenuItem(value: 'editar', child: Text('Editar dados')),
           PopupMenuItem(
             value: 'status',
-            child: Text(pessoa.ativo ? 'Desativar acesso' : 'Ativar acesso'),
+            child: Text(pessoa.ativo ? 'Bloquear acesso' : 'Reativar acesso'),
           ),
         ],
       ),
@@ -1121,7 +1971,10 @@ class _StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ativo =
-        status == 'Ativo' || status == 'Na equipe' || status == 'Registrada';
+        status == 'Ativo' ||
+        status == 'Na equipe' ||
+        status == 'Registrada' ||
+        status == 'Concluída';
     final esquema = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1170,25 +2023,6 @@ class _AvisoSecretaria extends StatelessWidget {
       ),
     );
   }
-}
-
-class _ResumoAvaliacao extends StatelessWidget {
-  final String rotulo, valor;
-  const _ResumoAvaliacao({required this.rotulo, required this.valor});
-  @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(rotulo, style: Theme.of(context).textTheme.titleMedium),
-          ),
-          Text(valor, style: Theme.of(context).textTheme.headlineSmall),
-        ],
-      ),
-    ),
-  );
 }
 
 class _DetalheLinha extends StatelessWidget {

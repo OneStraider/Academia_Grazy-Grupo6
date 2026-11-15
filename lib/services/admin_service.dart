@@ -98,6 +98,7 @@ class AdminAvaliacaoResumo {
   final double massaMagra;
   final double? percentualGordura;
   final String? observacoes;
+  final String status;
 
   const AdminAvaliacaoResumo({
     required this.id,
@@ -109,6 +110,31 @@ class AdminAvaliacaoResumo {
     required this.massaMagra,
     required this.percentualGordura,
     required this.observacoes,
+    required this.status,
+  });
+}
+
+class AdminPontoSerie {
+  final String rotulo;
+  final DateTime inicio;
+  final Map<String, int> valores;
+  const AdminPontoSerie(this.rotulo, this.inicio, this.valores);
+}
+
+class AdminTreinoResumo {
+  final int alunoId;
+  final String aluno;
+  final String nome;
+  final String status;
+  final DateTime validade;
+  final bool concluido;
+  const AdminTreinoResumo({
+    required this.alunoId,
+    required this.aluno,
+    required this.nome,
+    required this.status,
+    required this.validade,
+    required this.concluido,
   });
 }
 
@@ -210,14 +236,14 @@ class AdminService {
     String busca = '',
   }) async {
     _autorizar();
-    if (tipo != 'ALUNO' && tipo != 'PROFESSOR') {
+    if (tipo != 'TODOS' && tipo != 'ALUNO' && tipo != 'PROFESSOR') {
       throw ArgumentError.value(tipo, 'tipo', 'Perfil não permitido.');
     }
     final db = await _obterBanco();
     final rows = await db.query(
       'usuario',
-      where: 'tipo = ?',
-      whereArgs: [tipo],
+      where: tipo == 'TODOS' ? 'tipo IN (?, ?)' : 'tipo = ?',
+      whereArgs: tipo == 'TODOS' ? ['ALUNO', 'PROFESSOR'] : [tipo],
       orderBy: 'nome COLLATE NOCASE',
     );
     final termo = busca.trim().toLowerCase();
@@ -340,7 +366,7 @@ class AdminService {
     _autorizar();
     final db = await _obterBanco();
     final rows = await db.rawQuery(
-      '''SELECT a.id, a.data, a.peso, a.altura, a.massa_magra,
+      '''SELECT a.id, a.data, a.peso, a.altura, a.massa_magra, a.status,
                 a.percentual_gordura, a.observacoes,
                 aluno.nome AS aluno_nome, professor.nome AS professor_nome
          FROM avaliacao_fisica a
@@ -363,6 +389,7 @@ class AdminService {
             massaMagra: (row['massa_magra'] as num).toDouble(),
             percentualGordura: (row['percentual_gordura'] as num?)?.toDouble(),
             observacoes: row['observacoes'] as String?,
+            status: row['status'] as String? ?? 'CONCLUIDA',
           ),
         )
         .where(
@@ -372,5 +399,202 @@ class AdminService {
               item.professor.toLowerCase().contains(termo),
         )
         .toList();
+  }
+
+  Future<void> definirStatusAvaliacao(int id, String status) async {
+    _autorizar();
+    if (status != 'ABERTA' && status != 'CONCLUIDA') {
+      throw ArgumentError.value(status, 'status');
+    }
+    final db = await _obterBanco();
+    final count = await db.update(
+      'avaliacao_fisica',
+      {'status': status},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    if (count == 0) throw StateError('Avaliação não encontrada.');
+    DatabaseEvents.changed();
+  }
+
+  Future<void> excluirAvaliacao(int id) async {
+    _autorizar();
+    final db = await _obterBanco();
+    final count = await db.delete(
+      'avaliacao_fisica',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    if (count == 0) throw StateError('Avaliação não encontrada.');
+    DatabaseEvents.changed();
+  }
+
+  Future<List<AdminPontoSerie>> carregarSerie({
+    required AdminGranularidade periodo,
+    required DateTime referencia,
+    required String metrica,
+    int? professorId,
+  }) async {
+    _autorizar();
+    final db = await _obterBanco();
+    final buckets = _buckets(periodo, referencia);
+    if (buckets.isEmpty) return const [];
+    final first = buckets.first.$1;
+    final last = buckets.last.$2;
+    final result = <AdminPontoSerie>[];
+
+    if (metrica == 'treinos') {
+      final teachers = await db.query(
+        'usuario',
+        columns: ['id', 'nome'],
+        where: professorId == null ? 'tipo = ?' : 'tipo = ? AND id = ?',
+        whereArgs: professorId == null
+            ? ['PROFESSOR']
+            : ['PROFESSOR', professorId],
+        orderBy: 'nome COLLATE NOCASE',
+      );
+      final workouts = await db.rawQuery(
+        '''
+        SELECT t.professor_id, t.criado_em FROM treino t
+        WHERE t.professor_id IN (SELECT id FROM usuario WHERE tipo='PROFESSOR')
+          AND t.criado_em >= ? AND t.criado_em < ?
+          ${professorId == null ? '' : 'AND t.professor_id = ?'}
+      ''',
+        [first.toIso8601String(), last.toIso8601String(), ?professorId],
+      );
+      final datesByTeacher = <int, List<DateTime>>{};
+      for (final row in workouts) {
+        final date = DateTime.tryParse(row['criado_em'] as String? ?? '');
+        if (date != null) {
+          datesByTeacher
+              .putIfAbsent((row['professor_id'] as num).toInt(), () => [])
+              .add(date);
+        }
+      }
+      for (final (inicio, fim, label) in buckets) {
+        final values = <String, int>{};
+        for (final teacher in teachers) {
+          final id = (teacher['id'] as num).toInt();
+          final name = teacher['nome'] as String;
+          values[name] = (datesByTeacher[id] ?? const <DateTime>[])
+              .where((date) => !date.isBefore(inicio) && date.isBefore(fim))
+              .length;
+        }
+        result.add(AdminPontoSerie(label, inicio, values));
+      }
+    } else if (metrica == 'novos' || metrica == 'total') {
+      final dates = await db.rawQuery(
+        '''
+        SELECT criado_em FROM usuario WHERE tipo='ALUNO' AND criado_em < ?
+        ${metrica == 'novos' ? 'AND criado_em >= ?' : ''}
+      ''',
+        [
+          last.toIso8601String(),
+          if (metrica == 'novos') first.toIso8601String(),
+        ],
+      );
+      final created = dates
+          .map((row) => DateTime.tryParse(row['criado_em'] as String? ?? ''))
+          .whereType<DateTime>()
+          .toList(growable: false);
+      for (final (inicio, fim, label) in buckets) {
+        final count = metrica == 'novos'
+            ? created
+                  .where((date) => !date.isBefore(inicio) && date.isBefore(fim))
+                  .length
+            : created.where((date) => date.isBefore(fim)).length;
+        result.add(
+          AdminPontoSerie(label, inicio, {
+            metrica == 'novos' ? 'Novos alunos' : 'Total de alunos': count,
+          }),
+        );
+      }
+    } else {
+      throw ArgumentError.value(metrica, 'metrica');
+    }
+    return result;
+  }
+
+  Future<List<AdminTreinoResumo>> listarTreinosProfessor(
+    int professorId,
+  ) async {
+    _autorizar();
+    final db = await _obterBanco();
+    final rows = await db.rawQuery(
+      '''
+      SELECT t.aluno_id, u.nome AS aluno, t.nome, t.status, t.validade, t.concluido_em
+      FROM treino t JOIN usuario u ON u.id=t.aluno_id
+      WHERE t.professor_id=? ORDER BY t.validade DESC
+    ''',
+      [professorId],
+    );
+    return rows
+        .map(
+          (row) => AdminTreinoResumo(
+            alunoId: (row['aluno_id'] as num).toInt(),
+            aluno: row['aluno'] as String,
+            nome: row['nome'] as String,
+            status: row['status'] as String,
+            validade: DateTime.parse(row['validade'] as String),
+            concluido: row['concluido_em'] != null,
+          ),
+        )
+        .toList();
+  }
+
+  List<(DateTime, DateTime, String)> _buckets(
+    AdminGranularidade periodo,
+    DateTime referencia,
+  ) {
+    final result = <(DateTime, DateTime, String)>[];
+    if (periodo == AdminGranularidade.dia) {
+      final start = DateTime(referencia.year, referencia.month, referencia.day);
+      result.add((
+        start,
+        start.add(const Duration(days: 1)),
+        '${start.day}/${start.month}',
+      ));
+    } else if (periodo == AdminGranularidade.semana) {
+      final dia = DateTime(referencia.year, referencia.month, referencia.day);
+      final start = dia.subtract(Duration(days: dia.weekday - DateTime.monday));
+      for (var i = 0; i < 7; i++) {
+        final from = start.add(Duration(days: i));
+        result.add((
+          from,
+          from.add(const Duration(days: 1)),
+          '${from.day}/${from.month}',
+        ));
+      }
+    } else if (periodo == AdminGranularidade.mes) {
+      final start = DateTime(referencia.year, referencia.month);
+      final days = DateTime(
+        referencia.year,
+        referencia.month + 1,
+      ).difference(start).inDays;
+      for (var i = 0; i < days; i += 7) {
+        final from = start.add(Duration(days: i));
+        final end = DateTime(
+          referencia.year,
+          referencia.month,
+          (i + 7).clamp(1, days + 1),
+        );
+        result.add((
+          from,
+          end,
+          '${from.day}–${end.subtract(const Duration(days: 1)).day}',
+        ));
+      }
+    } else {
+      final year = referencia.year;
+      for (var month = 1; month <= 12; month++) {
+        final from = DateTime(year, month);
+        result.add((
+          from,
+          DateTime(year, month + 1),
+          '$month/${year.toString().substring(2)}',
+        ));
+      }
+    }
+    return result;
   }
 }

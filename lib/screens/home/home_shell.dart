@@ -10,6 +10,7 @@ import '../../services/usuario_service.dart';
 import '../../services/database_events.dart';
 import '../../services/admin_service.dart';
 import '../admin/admin_prototype_screen.dart';
+import '../../widgets/modulo_page_view.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -138,15 +139,22 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     if (administrador) return const AdminPrototypeScreen();
     return Scaffold(
-      body: PageView(
-        controller: _pageController,
-        onPageChanged: _paginaAlterada,
-        physics: const PageScrollPhysics(),
-        children: pages,
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1120),
+          child: ModuloPageView(
+            controller: _pageController,
+            onPageChanged: _paginaAlterada,
+            children: pages,
+          ),
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
         onDestinationSelected: _selecionarAba,
+        labelBehavior: MediaQuery.sizeOf(context).width < 360
+            ? NavigationDestinationLabelBehavior.onlyShowSelected
+            : NavigationDestinationLabelBehavior.alwaysShow,
         destinations: destinations,
       ),
     );

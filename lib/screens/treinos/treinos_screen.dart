@@ -16,6 +16,24 @@ class _Dados {
   _Dados(this.treinos, this.contagem, this.nomesAlunos);
 }
 
+class _TreinoListaItem {
+  final String? titulo;
+  final Treino? treino;
+  final bool vencido;
+  final bool concluido;
+
+  const _TreinoListaItem.secao(this.titulo)
+    : treino = null,
+      vencido = false,
+      concluido = false;
+
+  const _TreinoListaItem.treino(
+    this.treino, {
+    this.vencido = false,
+    this.concluido = false,
+  }) : titulo = null;
+}
+
 class TreinosScreen extends StatefulWidget {
   const TreinosScreen({super.key});
 
@@ -178,58 +196,68 @@ class _TreinosScreenState extends State<TreinosScreen> {
                       );
                     }
 
-                    return ListView(
+                    final itens = <_TreinoListaItem>[];
+                    void adicionarSecao(
+                      String titulo,
+                      List<Treino> lista, {
+                      bool vencido = false,
+                      bool concluido = false,
+                    }) {
+                      if (lista.isEmpty) return;
+                      if (itens.isNotEmpty) {
+                        itens.add(const _TreinoListaItem.secao(''));
+                      }
+                      itens.add(_TreinoListaItem.secao(titulo));
+                      itens.addAll(
+                        lista.map(
+                          (treino) => _TreinoListaItem.treino(
+                            treino,
+                            vencido: vencido,
+                            concluido: concluido,
+                          ),
+                        ),
+                      );
+                    }
+
+                    adicionarSecao('Ativos · ${ativos.length}', ativos);
+                    adicionarSecao(
+                      'Vencidos · ${vencidos.length}',
+                      vencidos,
+                      vencido: true,
+                    );
+                    adicionarSecao(
+                      'Concluídos · ${concluidos.length}',
+                      concluidos,
+                      concluido: true,
+                    );
+
+                    return ListView.builder(
                       padding: const EdgeInsets.only(bottom: 90),
-                      children: [
-                        if (ativos.isNotEmpty) ...[
-                          Text(
-                            'Ativos · ${ativos.length}',
-                            style: tema.titleMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          for (final t in ativos)
-                            _card(
-                              t,
-                              false,
-                              dados.contagem[t.id] ?? 0,
-                              dados.nomesAlunos[t.alunoId] ??
-                                  'Aluno ${t.alunoId}',
+                      itemCount: itens.length,
+                      itemBuilder: (context, index) {
+                        final item = itens[index];
+                        if (item.treino == null) {
+                          if (item.titulo!.isEmpty) {
+                            return const SizedBox(height: 8);
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Text(
+                              item.titulo!,
+                              style: tema.titleMedium,
                             ),
-                        ],
-                        if (vencidos.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            'Vencidos · ${vencidos.length}',
-                            style: tema.titleMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          for (final t in vencidos)
-                            _card(
-                              t,
-                              true,
-                              dados.contagem[t.id] ?? 0,
-                              dados.nomesAlunos[t.alunoId] ??
-                                  'Aluno ${t.alunoId}',
-                            ),
-                        ],
-                        if (concluidos.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            'Concluídos · ${concluidos.length}',
-                            style: tema.titleMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          for (final t in concluidos)
-                            _card(
-                              t,
-                              false,
-                              dados.contagem[t.id] ?? 0,
-                              dados.nomesAlunos[t.alunoId] ??
-                                  'Aluno ${t.alunoId}',
-                              concluido: true,
-                            ),
-                        ],
-                      ],
+                          );
+                        }
+                        final treino = item.treino!;
+                        return _card(
+                          treino,
+                          item.vencido,
+                          dados.contagem[treino.id] ?? 0,
+                          dados.nomesAlunos[treino.alunoId] ??
+                              'Aluno ${treino.alunoId}',
+                          concluido: item.concluido,
+                        );
+                      },
                     );
                   },
                 ),

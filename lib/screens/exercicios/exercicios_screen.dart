@@ -153,21 +153,24 @@ class _ExerciciosScreenState extends State<ExerciciosScreen> {
                           : 'Nenhum exercício encontrado para essa busca.',
                     ),
                   );
-                return ListView(
+                final mostrarResumo = termo.isNotEmpty || _grupo != null;
+                return ListView.builder(
                   padding: const EdgeInsets.only(top: 10, bottom: 96),
-                  children: [
-                    if (termo.isNotEmpty || _grupo != null)
-                      Padding(
+                  itemCount: exercicios.length + (mostrarResumo ? 1 : 0),
+                  itemBuilder: (context, index) {
+                    if (mostrarResumo && index == 0) {
+                      return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Text(
                           '${exercicios.length} resultado(s)${termo.isNotEmpty ? ' para "$termo"' : ''}',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
-                      ),
-                    for (final exercicio in exercicios)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Card(
+                      );
+                    }
+                    final exercicio = exercicios[index - (mostrarResumo ? 1 : 0)];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Card(
                         child: ListTile(
                           leading: const Icon(Icons.fitness_center),
                           title: Text(exercicio.nome),
@@ -203,9 +206,9 @@ class _ExerciciosScreenState extends State<ExerciciosScreen> {
                                   ],
                                 ),
                         ),
-                        ),
                       ),
-                  ],
+                    );
+                  },
                 );
               },
             ),

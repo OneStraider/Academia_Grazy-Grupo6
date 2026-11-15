@@ -1,5 +1,8 @@
-import 'dart:io';
+import 'dart:convert';
+import 'dart:io' show Directory, File;
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
@@ -28,6 +31,7 @@ class _ExercicioFormScreenState extends State<ExercicioFormScreen> {
 
   late String _grupo;
   String? _imagemPath;
+  Uint8List? _imagemBytes;
   bool _salvando = false;
   bool _ajustandoImagem = false;
 
@@ -70,6 +74,14 @@ class _ExercicioFormScreenState extends State<ExercicioFormScreen> {
           const {'image/jpeg', 'image/png', 'image/gif'}.contains(tipo);
       if (!formatoPermitido) {
         _mensagem('Escolha uma imagem JPG, PNG ou GIF.');
+        return;
+      }
+
+      if (kIsWeb) {
+        _imagemBytes = await arquivo.readAsBytes();
+        if (!mounted) return;
+        setState(() => _imagemPath =
+            'data:${tipo.isEmpty ? 'image/jpeg' : tipo};base64,${base64Encode(_imagemBytes!)}');
         return;
       }
 
@@ -134,7 +146,7 @@ class _ExercicioFormScreenState extends State<ExercicioFormScreen> {
       }
 
       final imagemAntiga = widget.exercicio?.imagemUrl;
-      if (imagemAntiga != null &&
+      if (!kIsWeb && imagemAntiga != null &&
           imagemAntiga != _imagemPath &&
           !imagemAntiga.startsWith('http')) {
         final arquivoAntigo = File(imagemAntiga);
@@ -169,11 +181,18 @@ class _ExercicioFormScreenState extends State<ExercicioFormScreen> {
         errorBuilder: (_, _, _) => _imagemIndisponivel(),
       );
     }
-    return Image.file(
-      File(caminho),
-      fit: BoxFit.cover,
-      errorBuilder: (_, _, _) => _imagemIndisponivel(),
-    );
+    if (caminho.startsWith('data:image/')) {
+      try {
+        final dados = _imagemBytes ?? base64Decode(caminho.split(',').last);
+        return Image.memory(dados, fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => _imagemIndisponivel());
+      } catch (_) {
+        return _imagemIndisponivel();
+      }
+    }
+    if (kIsWeb) return _imagemIndisponivel();
+    return Image.file(File(caminho), fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => _imagemIndisponivel());
   }
 
   Widget _imagemIndisponivel() => Container(
@@ -268,9 +287,11 @@ class _ExercicioFormScreenState extends State<ExercicioFormScreen> {
               ],
             ],
           ),
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 2, bottom: 20),
-            child: Text('JPG, PNG ou GIF · ajuste em 16:9 · até 1200 × 675 px'),
+            child: Text(kIsWeb
+                ? 'JPG, PNG ou GIF · a imagem será salva no navegador; o recorte avançado não está disponível.'
+                : 'JPG, PNG ou GIF · ajuste em 16:9 · até 1200 × 675 px'),
           ),
           FilledButton(
             onPressed: _salvando ? null : _salvar,

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:academia_grazy_grupo6/models/usuario.dart';
+import 'package:academia_grazy_grupo6/services/password_hasher.dart';
 import 'package:academia_grazy_grupo6/services/usuario_service.dart';
 
 void main() {
@@ -24,20 +25,22 @@ void main() {
     expect(copia.ehAdmin, isFalse);
   });
 
-  test('gerarHash usa SHA-256 e sair limpa o usuário logado', () {
-    expect(
-      UsuarioService.gerarHash('123456'),
-      '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92',
-    );
+  test(
+    'hash de senha verifica a senha e sair limpa o usuário logado',
+    () async {
+      final hash = await PasswordHasher.hash('123456');
+      expect(await PasswordHasher.verificar('123456', hash), isTrue);
+      expect(await PasswordHasher.verificar('incorreta', hash), isFalse);
 
-    UsuarioService.usuarioLogado = Usuario(
-      nome: 'Maria',
-      email: 'maria@teste.com',
-      senhaHash: 'hash',
-      tipo: 'ALUNO',
-    );
-    UsuarioService().sair();
+      UsuarioService.usuarioLogado = Usuario(
+        nome: 'Maria',
+        email: 'maria@teste.com',
+        senhaHash: 'hash',
+        tipo: 'ALUNO',
+      );
+      UsuarioService().sair();
 
-    expect(UsuarioService.usuarioLogado, isNull);
-  });
+      expect(UsuarioService.usuarioLogado, isNull);
+    },
+  );
 }

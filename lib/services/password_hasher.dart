@@ -1,8 +1,8 @@
 import 'dart:convert';
-import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:crypto/crypto.dart';
 
 class PasswordHasher {
@@ -17,7 +17,7 @@ class PasswordHasher {
     for (var i = 0; i < salt.length; i++) {
       salt[i] = random.nextInt(256);
     }
-    final resultado = await Isolate.run(() => _pbkdf2(senha, salt, _iteracoes));
+    final resultado = await _derivar(senha, salt, _iteracoes);
     return '${_prefixo}\$$_iteracoes\$${base64UrlEncode(salt)}\$${base64UrlEncode(resultado)}';
   }
 
@@ -33,7 +33,7 @@ class PasswordHasher {
     try {
       final salt = base64Url.decode(base64Url.normalize(partes[2]));
       final esperado = base64Url.decode(base64Url.normalize(partes[3]));
-      final atual = await Isolate.run(() => _pbkdf2(senha, salt, iteracoes));
+      final atual = await _derivar(senha, salt, iteracoes);
       if (atual.length != esperado.length) return false;
       var diferenca = 0;
       for (var i = 0; i < atual.length; i++) {
@@ -45,7 +45,15 @@ class PasswordHasher {
     }
   }
 
-  static Uint8List _pbkdf2(String senha, List<int> salt, int iteracoes) {
+  static Future<Uint8List> _derivar(
+    String senha,
+    List<int> salt,
+    int iteracoes,
+  ) => kIsWeb
+      ? Future<Uint8List>.sync(() => pbkdf2(senha, salt, iteracoes))
+      : compute(_pbkdf2TopLevel, _HashRequest(senha, salt, iteracoes));
+
+  static Uint8List pbkdf2(String senha, List<int> salt, int iteracoes) {
     final hmac = Hmac(sha256, utf8.encode(senha));
     final entrada = Uint8List(salt.length + 4)..setRange(0, salt.length, salt);
     entrada[salt.length + 3] = 1;
@@ -61,3 +69,14 @@ class PasswordHasher {
     return resultado;
   }
 }
+
+class _HashRequest {
+  final String senha;
+  final List<int> salt;
+  final int iteracoes;
+
+  const _HashRequest(this.senha, this.salt, this.iteracoes);
+}
+
+Uint8List _pbkdf2TopLevel(_HashRequest request) =>
+    PasswordHasher.pbkdf2(request.senha, request.salt, request.iteracoes);
