@@ -432,11 +432,11 @@ class DatabaseHelper {
       'Circuito',
     ];
     final horariosIds = <int>[];
-    for (var i = 0; i < 12; i++) {
+    for (var i = 0; i < 15; i++) {
       final dia = DateTime(
         agora.year,
         agora.month,
-        agora.day + i + 1,
+        agora.day + i * 2 + 1,
         17 + i % 3,
       );
       final horarioId = await db.insert('horario_aula', {
