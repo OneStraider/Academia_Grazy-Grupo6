@@ -627,7 +627,7 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
             }
             final data = snapshot.data!;
             if (data.isEmpty) {
-              return const SizedBox(
+              return SizedBox(
                 height: 110,
                 child: Center(child: Text('Sem dados para este período.')),
               );
@@ -653,14 +653,19 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
                 return porTotal != 0 ? porTotal : a.compareTo(b);
               });
             }
-            if (plottedNames.isEmpty) {
-              return const SizedBox(
+            final semTreinosNoPeriodo =
+                metrica == 'treinos' &&
+                data.every(
+                  (ponto) =>
+                      names.every((nome) => (ponto.valores[nome] ?? 0) == 0),
+                );
+            if (plottedNames.isEmpty || semTreinosNoPeriodo) {
+              final mensagem = _professorSelecionado == null
+                  ? 'Não há treinos criados pelos professores neste período.'
+                  : 'Não há treinos criados por este professor neste período.';
+              return SizedBox(
                 height: 110,
-                child: Center(
-                  child: Text(
-                    'Nenhum treino para os professores neste período.',
-                  ),
-                ),
+                child: Center(child: Text(mensagem)),
               );
             }
             final coresLinha = [

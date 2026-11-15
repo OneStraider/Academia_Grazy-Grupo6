@@ -36,7 +36,7 @@ class DatabaseHelper {
       // 1 -> exercicio
       // 2 -> treino e treino_exercicio
       // 3 -> execucao_exercicio e feedback
-      version: 12,
+      version: 13,
 
       // Habilita as foreign keys do SQLite.
       onConfigure: (db) async {
@@ -151,6 +151,9 @@ class DatabaseHelper {
         if (oldVersion < 12) {
           await _seed(db);
           await _seedDemoMonth(db);
+        }
+        if (oldVersion < 13) {
+          await _migrarDatasTreinosDemo(db);
         }
       },
     );
@@ -331,13 +334,16 @@ class DatabaseHelper {
 
     final agora = DateTime.now();
     final inicioMes = agora.subtract(const Duration(days: 29));
+    DateTime dataDemo(int indice) => indice < 7
+        ? inicioMes.add(Duration(days: indice * 3, hours: indice % 5))
+        : agora.subtract(Duration(days: (9 - indice) * 2, hours: 3));
     final alunoIds = <int>[];
     for (var i = 0; i < alunos.length; i++) {
       final id = await idPorEmail(alunos[i]);
       alunoIds.add(id);
       await db.update(
         'usuario',
-        {'criado_em': inicioMes.add(Duration(days: i * 2)).toIso8601String()},
+        {'criado_em': dataDemo(i).toIso8601String()},
         where: 'id = ?',
         whereArgs: [id],
       );
@@ -356,7 +362,7 @@ class DatabaseHelper {
     for (var i = 0; i < alunoIds.length; i++) {
       final alunoId = alunoIds[i];
       final professorId = professorIds[i];
-      final dataCriacao = inicioMes.add(Duration(days: i * 2, hours: i % 5));
+      final dataCriacao = dataDemo(i);
       final concluido = i % 3 == 0;
       final treinoId = await db.insert('treino', {
         'aluno_id': alunoId,
@@ -374,9 +380,7 @@ class DatabaseHelper {
         'status': 'ATIVO',
         'observacoes': 'Treino de demonstração para apresentação local.',
         'criado_em': dataCriacao.toIso8601String(),
-        'concluido_em': concluido
-            ? dataCriacao.add(const Duration(days: 3)).toIso8601String()
-            : null,
+        'concluido_em': concluido ? dataCriacao.toIso8601String() : null,
       });
 
       for (var ordem = 0; ordem < 4; ordem++) {
@@ -391,9 +395,7 @@ class DatabaseHelper {
           'observacoes': 'Série de demonstração.',
         });
         if (concluido) {
-          final dataExecucao = dataCriacao.add(
-            Duration(days: 3, minutes: ordem * 12),
-          );
+          final dataExecucao = dataCriacao.add(Duration(minutes: ordem * 12));
           final execucaoId = await db.insert('execucao_exercicio', {
             'treino_exercicio_id': itemId,
             'data_execucao': dataExecucao.toIso8601String(),
@@ -463,6 +465,97 @@ class DatabaseHelper {
       'chave': 'demo_seed_month_v1',
       'valor': '1',
     });
+  }
+
+  /// Repositions seeded rows for databases that already had the first demo
+  /// load, so the current-week charts show sample activity too.
+  Future<void> _migrarDatasTreinosDemo(Database db) async {
+    const marcador = 'demo_weekly_dates_v1';
+    final jaMigrado = await db.query(
+      'preferencia_app',
+      columns: ['chave'],
+      where: 'chave = ?',
+      whereArgs: [marcador],
+      limit: 1,
+    );
+    if (jaMigrado.isNotEmpty) return;
+
+    const emails = [
+      'guilherme@academiagrazy.com',
+      'maria@academiagrazy.com',
+      'joao@academiagrazy.com',
+      'larissa@academiagrazy.com',
+      'pedro@academiagrazy.com',
+      'beatriz@academiagrazy.com',
+      'lucas@academiagrazy.com',
+      'sofia@academiagrazy.com',
+      'matheus@academiagrazy.com',
+      'isabela@academiagrazy.com',
+    ];
+    final agora = DateTime.now();
+    final inicioMes = agora.subtract(const Duration(days: 29));
+    for (var i = 0; i < emails.length; i++) {
+      final data = i < 7
+          ? inicioMes.add(Duration(days: i * 3, hours: i % 5))
+          : agora.subtract(Duration(days: (9 - i) * 2, hours: 3));
+      final usuario = await db.query(
+        'usuario',
+        columns: ['id'],
+        where: 'email = ?',
+        whereArgs: [emails[i]],
+        limit: 1,
+      );
+      if (usuario.isEmpty) continue;
+      final alunoId = usuario.single['id'] as int;
+      await db.update(
+        'usuario',
+        {'criado_em': data.toIso8601String()},
+        where: 'id = ?',
+        whereArgs: [alunoId],
+      );
+      final treinos = await db.query(
+        'treino',
+        columns: ['id', 'concluido_em'],
+        where: 'aluno_id = ? AND observacoes = ?',
+        whereArgs: [alunoId, 'Treino de demonstração para apresentação local.'],
+        orderBy: 'id ASC',
+        limit: 1,
+      );
+      if (treinos.isEmpty) continue;
+      final treinoId = treinos.single['id'] as int;
+      final concluido = treinos.single['concluido_em'] != null;
+      await db.update(
+        'treino',
+        {
+          'criado_em': data.toIso8601String(),
+          'concluido_em': concluido ? data.toIso8601String() : null,
+        },
+        where: 'id = ?',
+        whereArgs: [treinoId],
+      );
+      if (concluido) {
+        final itens = await db.query(
+          'treino_exercicio',
+          columns: ['id'],
+          where: 'treino_id = ?',
+          whereArgs: [treinoId],
+          orderBy: 'ordem ASC',
+        );
+        for (var ordem = 0; ordem < itens.length; ordem++) {
+          await db.update(
+            'execucao_exercicio',
+            {
+              'data_execucao': data
+                  .add(Duration(minutes: ordem * 12))
+                  .toIso8601String(),
+            },
+            where: 'treino_exercicio_id = ?',
+            whereArgs: [itens[ordem]['id']],
+          );
+        }
+      }
+    }
+    await db.insert('preferencia_app', {'chave': marcador, 'valor': '1'});
   }
 
   // Fecha o banco quando necessário.
