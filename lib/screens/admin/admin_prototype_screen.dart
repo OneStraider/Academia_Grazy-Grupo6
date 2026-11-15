@@ -634,59 +634,127 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
             }
             final names = data.expand((p) => p.valores.keys).toSet().toList()
               ..sort();
-            final colors = [
+            final bars = _graficoBarras[metrica] ?? false;
+            final plottedNames = bars && metrica == 'treinos'
+                ? names
+                      .where(
+                        (name) =>
+                            data.any((point) => (point.valores[name] ?? 0) > 0),
+                      )
+                      .toList()
+                : List<String>.of(names);
+            if (bars && metrica == 'treinos') {
+              int totalDaSerie(String nome) => data.fold(
+                0,
+                (soma, ponto) => soma + (ponto.valores[nome] ?? 0),
+              );
+              plottedNames.sort((a, b) {
+                final porTotal = totalDaSerie(b).compareTo(totalDaSerie(a));
+                return porTotal != 0 ? porTotal : a.compareTo(b);
+              });
+            }
+            if (plottedNames.isEmpty) {
+              return const SizedBox(
+                height: 110,
+                child: Center(
+                  child: Text(
+                    'Nenhum treino para os professores neste período.',
+                  ),
+                ),
+              );
+            }
+            final coresLinha = [
               cor,
               Theme.of(context).colorScheme.tertiary,
               Theme.of(context).colorScheme.secondary,
               Theme.of(context).colorScheme.error,
               AppTheme.primariaSuave,
+            ];
+            final coresBarras = [
+              cor,
+              Theme.of(context).colorScheme.tertiary,
+              Theme.of(context).colorScheme.secondary,
+              Theme.of(context).colorScheme.error,
               Colors.indigo,
               Colors.deepOrange,
               Colors.cyan.shade800,
               Colors.pink.shade700,
               Colors.brown,
+              Colors.blueGrey,
             ];
-            final todasAsSeries =
-                metrica == 'treinos' &&
-                _professorSelecionado == null &&
-                !(_graficoBarras[metrica] ?? false) &&
-                names.length > 1;
-            if (todasAsSeries) {
-              return _GraficoTodosProfessores(
-                data: data,
-                series: names,
-                colors: {
-                  for (var i = 0; i < names.length; i++)
-                    names[i]: colors[i % colors.length],
-                },
-              );
-            }
+            final cores = bars ? coresBarras : coresLinha;
+            final colors = {
+              for (var i = 0; i < names.length; i++)
+                names[i]: cores[i % cores.length],
+            };
+            final totalPeriodo = metrica == 'total'
+                ? (data.last.valores[names.first] ?? 0)
+                : data.fold<int>(
+                    0,
+                    (soma, ponto) =>
+                        soma +
+                        plottedNames.fold<int>(
+                          0,
+                          (subtotal, nome) =>
+                              subtotal + (ponto.valores[nome] ?? 0),
+                        ),
+                  );
+            final zeroProfessores = names.length - plottedNames.length;
             return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (bars) ...[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        '$totalPeriodo',
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(switch (metrica) {
+                        'treinos' => 'treinos no período',
+                        'novos' => 'novos alunos',
+                        _ => 'alunos ao fim do período',
+                      }, style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 SizedBox(
                   height: 190,
                   child: CustomPaint(
                     painter: _SerieChartPainter(
                       data: data,
-                      series: names,
-                      colors: {
-                        for (var i = 0; i < names.length; i++)
-                          names[i]: colors[i % colors.length],
-                      },
-                      bars: _graficoBarras[metrica] ?? false,
+                      series: plottedNames,
+                      colors: colors,
+                      bars: bars,
                       textDirection: Directionality.of(context),
                     ),
                     child: const SizedBox.expand(),
                   ),
                 ),
+                if (bars && metrica == 'treinos' && zeroProfessores > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '$zeroProfessores professores sem treinos no período',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ),
                 Wrap(
                   spacing: 12,
                   runSpacing: 4,
                   children: [
-                    for (var i = 0; i < names.length; i++)
+                    for (var i = 0; i < plottedNames.length; i++)
                       _LegendaSerie(
-                        label: names[i],
-                        color: colors[i % colors.length],
+                        label: plottedNames[i],
+                        color: colors[plottedNames[i]]!,
                       ),
                   ],
                 ),
@@ -1781,7 +1849,8 @@ class _SerieChartPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const left = 32.0, right = 8.0, top = 10.0, bottom = 26.0;
+    final left = bars ? 10.0 : 32.0;
+    const right = 8.0, top = 10.0, bottom = 26.0;
     final plot = Rect.fromLTRB(
       left,
       top,
@@ -1791,35 +1860,51 @@ class _SerieChartPainter extends CustomPainter {
     final maxValue = data
         .expand((p) => series.map((name) => p.valores[name] ?? 0))
         .fold<int>(0, (a, b) => a > b ? a : b)
-        .clamp(1, 1 << 30)
-        .toInt();
-    final intervalCount = math.min(maxValue, 3);
-    final axisMax = maxValue <= 3
-        ? maxValue
-        : ((maxValue + intervalCount - 1) ~/ intervalCount) * intervalCount;
+        .clamp(1, 1 << 30);
     final gridPaint = Paint()
       ..color = const Color(0xFFDCE6DE)
       ..strokeWidth = 1;
     final labelStyle = TextStyle(color: const Color(0xFF62716B), fontSize: 10);
-    for (var i = 0; i <= intervalCount; i++) {
-      final value = axisMax * i ~/ intervalCount;
-      final y = plot.bottom - plot.height * i / intervalCount;
-      canvas.drawLine(Offset(plot.left, y), Offset(plot.right, y), gridPaint);
-      _drawText(canvas, '$value', Offset(0, y - 6), labelStyle, textDirection);
+    if (bars) {
+      for (var i = 0; i <= 4; i++) {
+        final y = plot.bottom - plot.height * i / 4;
+        canvas.drawLine(
+          Offset(plot.left, y),
+          Offset(plot.right, y),
+          i == 0
+              ? (Paint()
+                  ..color = AppTheme.primaria
+                  ..strokeWidth = 2)
+              : gridPaint,
+        );
+      }
+    } else {
+      for (var i = 0; i <= 3; i++) {
+        final y = plot.bottom - plot.height * i / 3;
+        canvas.drawLine(Offset(plot.left, y), Offset(plot.right, y), gridPaint);
+        _drawText(
+          canvas,
+          '${(maxValue * i / 3).round()}',
+          Offset(0, y - 6),
+          labelStyle,
+          textDirection,
+        );
+      }
     }
     final count = data.length;
     final step = plot.width / count;
     if (bars) {
-      final groupWidth = step * .72;
+      final groupWidth = step * .86;
       final barWidth = groupWidth / series.length;
       for (var i = 0; i < count; i++) {
         for (var j = 0; j < series.length; j++) {
           final value = data[i].valores[series[j]] ?? 0;
-          final height = plot.height * value / axisMax;
+          final height = plot.height * value / maxValue;
+          final gap = barWidth > 8 ? 2.0 : 1.0;
           final rect = Rect.fromLTWH(
             plot.left + step * i + (step - groupWidth) / 2 + barWidth * j,
             plot.bottom - height,
-            math.max(1, barWidth - 2),
+            math.max(1, barWidth - gap),
             height,
           );
           canvas.drawRRect(
@@ -1836,7 +1921,7 @@ class _SerieChartPainter extends CustomPainter {
           points.add(
             Offset(
               plot.left + step * (i + .5),
-              plot.bottom - plot.height * value / axisMax,
+              plot.bottom - plot.height * value / maxValue,
             ),
           );
         }
@@ -1892,188 +1977,6 @@ class _SerieChartPainter extends CustomPainter {
       old.series != series ||
       old.colors != colors ||
       old.bars != bars;
-}
-
-class _GraficoTodosProfessores extends StatelessWidget {
-  final List<AdminPontoSerie> data;
-  final List<String> series;
-  final Map<String, Color> colors;
-
-  const _GraficoTodosProfessores({
-    required this.data,
-    required this.series,
-    required this.colors,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final maxValue = data
-        .expand((ponto) => series.map((nome) => ponto.valores[nome] ?? 0))
-        .fold<int>(0, (maior, valor) => maior > valor ? maior : valor)
-        .clamp(1, 1 << 30)
-        .toInt();
-    final textoPequeno = Theme.of(context).textTheme.labelSmall;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Text(
-            'Cada quadro mostra um professor na mesma escala (0–$maxValue por intervalo). O número indica o total no período.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final colunas = constraints.maxWidth >= 900
-                ? 3
-                : constraints.maxWidth >= 440
-                ? 2
-                : 1;
-            const espacamento = 10.0;
-            final largura =
-                (constraints.maxWidth - espacamento * (colunas - 1)) / colunas;
-
-            return Wrap(
-              spacing: espacamento,
-              runSpacing: espacamento,
-              children: [
-                for (final nome in series)
-                  SizedBox(
-                    width: largura,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerLowest,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.outlineVariant,
-                        ),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    nome,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelLarge,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  '${data.fold<int>(0, (soma, ponto) => soma + (ponto.valores[nome] ?? 0))}',
-                                  style: Theme.of(context).textTheme.labelLarge
-                                      ?.copyWith(color: colors[nome]),
-                                ),
-                              ],
-                            ),
-                            SizedBox(
-                              height: 54,
-                              child: CustomPaint(
-                                painter: _MiniSeriePainter(
-                                  data: data,
-                                  nome: nome,
-                                  maxValue: maxValue,
-                                  color: colors[nome]!,
-                                ),
-                                child: const SizedBox.expand(),
-                              ),
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(data.first.rotulo, style: textoPequeno),
-                                Text(data.last.rotulo, style: textoPequeno),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          },
-        ),
-      ],
-    );
-  }
-}
-
-class _MiniSeriePainter extends CustomPainter {
-  final List<AdminPontoSerie> data;
-  final String nome;
-  final int maxValue;
-  final Color color;
-
-  const _MiniSeriePainter({
-    required this.data,
-    required this.nome,
-    required this.maxValue,
-    required this.color,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const margem = 4.0;
-    final plot = Rect.fromLTRB(
-      margem,
-      margem,
-      size.width - margem,
-      size.height - margem,
-    );
-    final grade = Paint()
-      ..color = const Color(0xFFDCE6DE)
-      ..strokeWidth = 1;
-    canvas.drawLine(
-      Offset(plot.left, plot.center.dy),
-      Offset(plot.right, plot.center.dy),
-      grade,
-    );
-
-    final path = Path();
-    for (var i = 0; i < data.length; i++) {
-      final x = data.length == 1
-          ? plot.center.dx
-          : plot.left + plot.width * i / (data.length - 1);
-      final value = data[i].valores[nome] ?? 0;
-      final y = plot.bottom - plot.height * value / maxValue;
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-      if (value > 0) {
-        canvas.drawCircle(Offset(x, y), 2.5, Paint()..color = color);
-      }
-    }
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color
-        ..strokeWidth = 2
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _MiniSeriePainter old) =>
-      old.data != data ||
-      old.nome != nome ||
-      old.maxValue != maxValue ||
-      old.color != color;
 }
 
 class _Painel extends StatelessWidget {
