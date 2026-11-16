@@ -121,6 +121,51 @@ class AdminPontoSerie {
   const AdminPontoSerie(this.rotulo, this.inicio, this.valores);
 }
 
+class AdminTreinoProfessorTotal {
+  final int? professorId;
+  final String nome;
+  final int total;
+  final bool semProfessor;
+
+  const AdminTreinoProfessorTotal({
+    required this.professorId,
+    required this.nome,
+    required this.total,
+    this.semProfessor = false,
+  });
+}
+
+class AdminComparativoTreinos {
+  final int totalPeriodo;
+  final int totalSemProfessor;
+  final List<AdminTreinoProfessorTotal> professores;
+
+  const AdminComparativoTreinos({
+    required this.totalPeriodo,
+    required this.totalSemProfessor,
+    required this.professores,
+  });
+
+  List<AdminTreinoProfessorTotal> get barrasOrdenadas {
+    final barras = [...professores];
+    if (totalSemProfessor > 0) {
+      barras.add(
+        AdminTreinoProfessorTotal(
+          professorId: null,
+          nome: 'Sem professor',
+          total: totalSemProfessor,
+          semProfessor: true,
+        ),
+      );
+    }
+    barras.sort((a, b) {
+      final porTotal = b.total.compareTo(a.total);
+      return porTotal != 0 ? porTotal : a.nome.compareTo(b.nome);
+    });
+    return barras;
+  }
+}
+
 class AdminTreinoResumo {
   final int alunoId;
   final String aluno;
@@ -515,6 +560,75 @@ class AdminService {
     return result;
   }
 
+  /// Counts every created treino in the same half-open date range.
+  /// Treinos whose professor is missing or is not a professor are returned in
+  /// an explicit "Sem professor" total so the bars reconcile with the total.
+  Future<AdminComparativoTreinos> compararTreinosPorProfessor(
+    AdminPeriodo periodo,
+  ) async {
+    _autorizar();
+    final db = await _obterBanco();
+    final inicio = periodo.inicio.toIso8601String();
+    final fim = periodo.fim.toIso8601String();
+    final professores = await db.rawQuery(
+      '''
+      SELECT p.id AS professor_id, p.nome, COUNT(t.id) AS total
+      FROM usuario p
+      LEFT JOIN treino t
+        ON t.professor_id = p.id AND t.criado_em >= ? AND t.criado_em < ?
+      WHERE p.tipo = 'PROFESSOR'
+      GROUP BY p.id, p.nome
+      ORDER BY total DESC, p.nome COLLATE NOCASE
+      ''',
+      [inicio, fim],
+    );
+    final semProfessor =
+        Sqflite.firstIntValue(
+          await db.rawQuery(
+            '''
+        SELECT COUNT(*)
+        FROM treino t
+        LEFT JOIN usuario p
+          ON p.id = t.professor_id AND p.tipo = 'PROFESSOR'
+        WHERE t.criado_em >= ? AND t.criado_em < ? AND p.id IS NULL
+        ''',
+            [inicio, fim],
+          ),
+        ) ??
+        0;
+    final total =
+        Sqflite.firstIntValue(
+          await db.rawQuery(
+            'SELECT COUNT(*) FROM treino WHERE criado_em >= ? AND criado_em < ?',
+            [inicio, fim],
+          ),
+        ) ??
+        0;
+    final detalhes = professores
+        .map(
+          (row) => AdminTreinoProfessorTotal(
+            professorId: (row['professor_id'] as num).toInt(),
+            nome: row['nome'] as String,
+            total: (row['total'] as num).toInt(),
+          ),
+        )
+        .toList(growable: false);
+    final contabilizado = detalhes.fold<int>(
+      semProfessor,
+      (soma, professor) => soma + professor.total,
+    );
+    if (contabilizado != total) {
+      throw StateError(
+        'O total de treinos ($total) não confere com os grupos contabilizados ($contabilizado).',
+      );
+    }
+    return AdminComparativoTreinos(
+      totalPeriodo: total,
+      totalSemProfessor: semProfessor,
+      professores: detalhes,
+    );
+  }
+
   Future<List<AdminTreinoResumo>> listarTreinosProfessor(
     int professorId,
   ) async {
@@ -576,7 +690,7 @@ class AdminService {
         final end = DateTime(
           referencia.year,
           referencia.month,
-          (i + 7).clamp(1, days + 1),
+          (i + 8).clamp(1, days + 1),
         );
         result.add((
           from,

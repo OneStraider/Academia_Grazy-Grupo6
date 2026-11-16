@@ -105,6 +105,16 @@ dart run sqflite_common_ffi_web:setup
 flutter run -d chrome --web-port 8080
 ```
 
+Para apresentar os gráficos com um histórico fictício mais completo, inicie uma base de demonstração isolada:
+
+```powershell
+flutter run -d chrome --web-port 8080 --dart-define=ACADEMIA_GRAZY_DEMO_DATA=true
+```
+
+Esse modo usa outro banco local (`academia_grazy_apresentacao.db`) e mantém o banco normal (`academia_grazy.db`) separado. Ele reutiliza os dez professores, dez alunos e exercícios de demonstração, distribuindo treinos fictícios ao longo dos últimos doze meses e da semana atual. O painel exibe um aviso de **Ambiente de demonstração**; as observações também identificam os registros, que ficam inativos e não são marcados como concluídos. A carga roda uma vez por banco, com marcador próprio. Para gerar a versão web de apresentação, acrescente o mesmo `--dart-define` ao comando `flutter build web --release`.
+
+O aplicativo já fazia uma carga demonstrativa básica em instalações novas e em algumas migrações anteriores. Esta alteração não remove nem reclassifica esses registros existentes; o histórico ampliado é gravado somente no banco separado do modo de apresentação.
+
 Se a porta estiver ocupada, encerre a execução anterior com `q` no terminal do Flutter ou use outra porta, por exemplo `--web-port 8082`. A porta faz parte da origem do navegador: mantenha a mesma porta para continuar usando o mesmo banco IndexedDB. Se a página mostrar uma versão antiga, pare o servidor antigo, inicie a partir da pasta do projeto atualizado e faça recarga forçada com `Ctrl+Shift+R`.
 
 Para gerar os arquivos da versão web:

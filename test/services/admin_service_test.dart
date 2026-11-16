@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:academia_grazy_grupo6/database/database_helper.dart';
@@ -190,6 +189,107 @@ void main() {
     );
   });
 
+  test('intervalos mensais contam dias de fronteira sem lacunas', () async {
+    UsuarioService.usuarioLogado = admin();
+    final professorId = await db.insert('usuario', {
+      'nome': 'Professora Ana',
+      'email': 'ana@teste.com',
+      'senha_hash': 'hash',
+      'tipo': 'PROFESSOR',
+      'criado_em': '2026-03-01T00:00:00.000',
+    });
+    for (final dia in [7, 8, 14, 15, 21, 22, 28, 29, 31]) {
+      await db.insert('treino', {
+        'aluno_id': 1,
+        'professor_id': professorId,
+        'criado_em': '2026-03-${dia.toString().padLeft(2, '0')}T12:00:00.000',
+      });
+    }
+
+    final serie = await service().carregarSerie(
+      periodo: AdminGranularidade.mes,
+      referencia: DateTime(2026, 3, 15),
+      metrica: 'treinos',
+    );
+
+    expect(serie, hasLength(5));
+    expect(serie.map((ponto) => ponto.valores['Professora Ana']), [
+      1,
+      2,
+      2,
+      2,
+      2,
+    ]);
+    expect(
+      serie.fold<int>(0, (total, ponto) => total + ponto.valores.values.single),
+      9,
+    );
+  });
+
+  test(
+    'Todos os professores inclui nomes e contagens, mesmo sem treinos',
+    () async {
+      UsuarioService.usuarioLogado = admin();
+      final ana = await db.insert('usuario', {
+        'nome': 'Ana',
+        'email': 'ana@teste.com',
+        'senha_hash': 'hash',
+        'tipo': 'PROFESSOR',
+        'criado_em': '2026-03-01T00:00:00.000',
+      });
+      final bruno = await db.insert('usuario', {
+        'nome': 'Bruno',
+        'email': 'bruno@teste.com',
+        'senha_hash': 'hash',
+        'tipo': 'PROFESSOR',
+        'criado_em': '2026-03-01T00:00:00.000',
+      });
+      await db.insert('usuario', {
+        'nome': 'Camila',
+        'email': 'camila@teste.com',
+        'senha_hash': 'hash',
+        'tipo': 'PROFESSOR',
+        'criado_em': '2026-03-01T00:00:00.000',
+      });
+      for (var i = 0; i < 2; i++) {
+        await db.insert('treino', {
+          'aluno_id': 1,
+          'professor_id': ana,
+          'criado_em': '2026-03-12T10:00:00.000',
+        });
+      }
+      await db.insert('treino', {
+        'aluno_id': 1,
+        'professor_id': bruno,
+        'criado_em': '2026-03-13T10:00:00.000',
+      });
+
+      final serie = await service().carregarSerie(
+        periodo: AdminGranularidade.mes,
+        referencia: DateTime(2026, 3, 20),
+        metrica: 'treinos',
+      );
+
+      expect(serie, isNotEmpty);
+      expect(serie.first.valores.keys.toSet(), {'Ana', 'Bruno', 'Camila'});
+      expect(
+        serie.fold<int>(0, (sum, point) => sum + (point.valores['Ana'] ?? 0)),
+        2,
+      );
+      expect(
+        serie.fold<int>(0, (sum, point) => sum + (point.valores['Bruno'] ?? 0)),
+        1,
+      );
+      expect(
+        serie.fold<int>(
+          0,
+          (sum, point) => sum + (point.valores['Camila'] ?? 0),
+        ),
+        0,
+      );
+    },
+  );
+
   test('admin filtra todos os perfis e atualiza ou remove avaliação', () async {
     UsuarioService.usuarioLogado = admin();
     final alunoId = await db.insert('usuario', {
@@ -308,6 +408,97 @@ void main() {
       expect(pessoa['criado_em'], isNotNull);
       expect(treino['id'], 8);
       expect(treino['criado_em'], isNotNull);
+    },
+  );
+
+  test(
+    'comparativo reconcilia professores, órfãos e limite final exclusivo',
+    () async {
+      UsuarioService.usuarioLogado = admin();
+      final ana = await db.insert('usuario', {
+        'nome': 'Ana',
+        'email': 'ana@teste.com',
+        'senha_hash': 'hash',
+        'tipo': 'PROFESSOR',
+        'criado_em': '2026-01-01T00:00:00.000',
+      });
+      await db.insert('usuario', {
+        'nome': 'Bruno',
+        'email': 'bruno@teste.com',
+        'senha_hash': 'hash',
+        'tipo': 'PROFESSOR',
+        'criado_em': '2026-01-01T00:00:00.000',
+      });
+      final aluna = await db.insert('usuario', {
+        'nome': 'Aluna',
+        'email': 'aluna@teste.com',
+        'senha_hash': 'hash',
+        'tipo': 'ALUNO',
+        'criado_em': '2026-01-01T00:00:00.000',
+      });
+
+      Future<void> adicionarTreino(int professorId, String data) async {
+        await db.insert('treino', {
+          'aluno_id': aluna,
+          'professor_id': professorId,
+          'criado_em': data,
+        });
+      }
+
+      await adicionarTreino(ana, '2026-11-01T00:00:00.000');
+      await adicionarTreino(aluna, '2026-11-05T10:00:00.000');
+      await adicionarTreino(ana, '2026-11-06T10:00:00.000');
+      await adicionarTreino(9999, '2026-11-10T10:00:00.000');
+      await adicionarTreino(ana, '2026-12-01T00:00:00.000');
+
+      final comparativo = await service().compararTreinosPorProfessor(
+        AdminPeriodo.calcular(AdminGranularidade.mes, DateTime(2026, 11, 15)),
+      );
+
+      expect(comparativo.totalPeriodo, 4);
+      expect(comparativo.totalSemProfessor, 2);
+      expect(
+        comparativo.professores.map((p) => p.total).reduce((a, b) => a + b),
+        2,
+      );
+      expect(comparativo.barrasOrdenadas.first.nome, 'Ana');
+      expect(comparativo.barrasOrdenadas[1].nome, 'Sem professor');
+      expect(
+        comparativo.barrasOrdenadas.fold<int>(0, (sum, bar) => sum + bar.total),
+        comparativo.totalPeriodo,
+      );
+      final semanal = await service().compararTreinosPorProfessor(
+        AdminPeriodo.calcular(AdminGranularidade.semana, DateTime(2026, 11, 5)),
+      );
+      final anual = await service().compararTreinosPorProfessor(
+        AdminPeriodo.calcular(AdminGranularidade.ano, DateTime(2026, 11, 5)),
+      );
+      expect(semanal.totalPeriodo, 2);
+      expect(
+        semanal.barrasOrdenadas.fold<int>(0, (sum, bar) => sum + bar.total),
+        2,
+      );
+      expect(anual.totalPeriodo, 5);
+      expect(
+        anual.barrasOrdenadas.fold<int>(0, (sum, bar) => sum + bar.total),
+        5,
+      );
+      Future<int> treinosDaAna(AdminGranularidade granularidade) async {
+        final pontos = await service().carregarSerie(
+          periodo: granularidade,
+          referencia: DateTime(2026, 11, 5),
+          metrica: 'treinos',
+          professorId: ana,
+        );
+        return pontos.fold<int>(
+          0,
+          (soma, ponto) => soma + (ponto.valores['Ana'] ?? 0),
+        );
+      }
+
+      expect(await treinosDaAna(AdminGranularidade.semana), 1);
+      expect(await treinosDaAna(AdminGranularidade.mes), 2);
+      expect(await treinosDaAna(AdminGranularidade.ano), 3);
     },
   );
 }

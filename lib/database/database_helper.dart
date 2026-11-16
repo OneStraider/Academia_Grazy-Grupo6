@@ -3,9 +3,15 @@ import 'package:sqflite/sqflite.dart';
 
 import 'database_tables.dart';
 import '../services/password_hasher.dart';
+import 'demo_training_seeder.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._internal();
+
+  /// Explicitly opts this process into a separate local demo database.
+  static const bool modoDemonstracao = bool.fromEnvironment(
+    'ACADEMIA_GRAZY_DEMO_DATA',
+  );
 
   static Database? _database;
 
@@ -27,7 +33,10 @@ class DatabaseHelper {
   Future<Database> _initDatabase() async {
     final databasePath = await getDatabasesPath();
 
-    final path = join(databasePath, 'academia_grazy.db');
+    final nomeBanco = modoDemonstracao
+        ? 'academia_grazy_apresentacao.db'
+        : 'academia_grazy.db';
+    final path = join(databasePath, nomeBanco);
 
     return await openDatabase(
       path,
@@ -157,6 +166,11 @@ class DatabaseHelper {
         }
         if (oldVersion < 14) {
           await _migrarAtribuicaoTreinosDemo(db);
+        }
+      },
+      onOpen: (db) async {
+        if (modoDemonstracao) {
+          await DemoTrainingSeeder().seed(db);
         }
       },
     );
