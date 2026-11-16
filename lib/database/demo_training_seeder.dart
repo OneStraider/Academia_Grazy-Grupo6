@@ -1,6 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 
-/// Seeds a richer chart dataset only in the explicitly selected demo database.
+/// Seeds the richer chart history into the app's single local demo database.
 /// Every generated row is a real treino record, clearly labeled as fictitious.
 class DemoTrainingSeeder {
   static const marker = 'demo_training_history_v1';
@@ -124,12 +124,12 @@ class DemoTrainingSeeder {
       final rows = await db.query(
         'usuario',
         columns: ['id'],
-        where: 'email = ? AND tipo = ? AND ativo = 1',
+        where: 'email = ? AND tipo = ?',
         whereArgs: [email, tipo],
         limit: 1,
       );
       if (rows.isEmpty) {
-        throw StateError('Conta de demonstração ativa ausente ($tipo): $email');
+        throw StateError('Conta de demonstração ausente ($tipo): $email');
       }
       ids.add((rows.single['id'] as num).toInt());
     }

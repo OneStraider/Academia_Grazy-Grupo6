@@ -514,7 +514,7 @@ class _AdminPrototypeScreenState extends State<AdminPrototypeScreen> {
         28,
       ),
       children: [
-        if (DatabaseHelper.modoDemonstracao) ...[
+        if (DatabaseHelper.dadosDemonstracao) ...[
           const _AvisoDadosDemonstracao(),
           const SizedBox(height: 12),
         ],

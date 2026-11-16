@@ -117,6 +117,31 @@ void main() {
     },
   );
 
+  test(
+    'seed não depende de contas de demonstração estarem liberadas',
+    () async {
+      await db.update(
+        'usuario',
+        {'ativo': 0},
+        where: 'email = ?',
+        whereArgs: [DemoTrainingSeeder.professores.first],
+      );
+      await db.update(
+        'usuario',
+        {'ativo': 0},
+        where: 'email = ?',
+        whereArgs: [DemoTrainingSeeder.alunos.first],
+      );
+
+      await DemoTrainingSeeder().seed(db, referencia: referencia);
+
+      expect(
+        Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM treino')),
+        481,
+      );
+    },
+  );
+
   test('séries semana, mês, ano e filtro de professor refletem as linhas salvas', () async {
     await DemoTrainingSeeder().seed(db, referencia: referencia);
     UsuarioService.usuarioLogado = Usuario(

@@ -8,10 +8,8 @@ import 'demo_training_seeder.dart';
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._internal();
 
-  /// Explicitly opts this process into a separate local demo database.
-  static const bool modoDemonstracao = bool.fromEnvironment(
-    'ACADEMIA_GRAZY_DEMO_DATA',
-  );
+  /// Todos os cadastros e registros deste app são dados fictícios locais.
+  static const bool dadosDemonstracao = true;
 
   static Database? _database;
 
@@ -33,10 +31,7 @@ class DatabaseHelper {
   Future<Database> _initDatabase() async {
     final databasePath = await getDatabasesPath();
 
-    final nomeBanco = modoDemonstracao
-        ? 'academia_grazy_apresentacao.db'
-        : 'academia_grazy.db';
-    final path = join(databasePath, nomeBanco);
+    final path = join(databasePath, 'academia_grazy.db');
 
     return await openDatabase(
       path,
@@ -169,9 +164,9 @@ class DatabaseHelper {
         }
       },
       onOpen: (db) async {
-        if (modoDemonstracao) {
-          await DemoTrainingSeeder().seed(db);
-        }
+        await _seed(db);
+        await _seedDemoMonth(db);
+        await DemoTrainingSeeder().seed(db);
       },
     );
   }
@@ -237,8 +232,7 @@ class DatabaseHelper {
   }
 
   Future<void> _seed(Database db) async {
-    final hash = await PasswordHasher.hash('grazy123');
-    for (final user in [
+    final usuariosDemo = <List<String>>[
       ['Administrador', 'admin@academiagrazy.com', 'ADMIN'],
       ['Prof. Carlos', 'professor@academiagrazy.com', 'PROFESSOR'],
       ['Prof. Ana', 'ana@academiagrazy.com', 'PROFESSOR'],
@@ -260,12 +254,24 @@ class DatabaseHelper {
       ['Sofia', 'sofia@academiagrazy.com', 'ALUNO'],
       ['Matheus', 'matheus@academiagrazy.com', 'ALUNO'],
       ['Isabela', 'isabela@academiagrazy.com', 'ALUNO'],
-    ]) {
+    ];
+    final emailsExistentes = (await db.query(
+      'usuario',
+      columns: ['email'],
+    )).map((row) => (row['email'] as String).trim().toLowerCase()).toSet();
+    final precisaCriarConta = usuariosDemo.any(
+      (user) => !emailsExistentes.contains(user[1].toLowerCase()),
+    );
+    final hash = precisaCriarConta
+        ? await PasswordHasher.hash('grazy123')
+        : null;
+    for (final user in usuariosDemo) {
+      if (!emailsExistentes.add(user[1].toLowerCase())) continue;
       await db.insert('usuario', {
         'nome': user[0],
         'email': user[1],
         'tipo': user[2],
-        'senha_hash': hash,
+        'senha_hash': hash!,
       }, conflictAlgorithm: ConflictAlgorithm.ignore);
     }
     for (final item in [
